@@ -3,7 +3,7 @@
 Free, open source, no ads, no account, no paywall. It works offline on your phone once it's installed.
 
 **Open the app:** https://josecoolboy92.github.io/anatsi/
-**Android app (APK, works offline):** download `Anatsi-1.1.apk` from the [latest release](https://github.com/josecoolboy92/anatsi/releases/latest).
+**Android app (APK, works offline):** https://josecoolboy92.github.io/anatsi/download/Anatsi-1.1.apk
 
 English and Amharic (አማርኛ): choose on first start, or switch on the home screen or in Settings.
 

@@ -1172,6 +1172,7 @@ function renderSettings() {
           el('button', { class: 'btn small', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(ta.value); toast('Copied'); } catch { ta.select(); } } }, 'Copy'),
           el('button', { class: 'btn small', type: 'button', onclick: () => downloadBlob(new Blob([ta.value], { type: 'application/json' }), `anatsi-backup-${new Date().toISOString().slice(0, 10)}.json`) }, 'Save backup file'),
           el('button', { class: 'btn small', type: 'button', onclick: () => { try { const d = JSON.parse(ta.value); if (Array.isArray(d.projects)) { const ids = new Set(projects.map((x) => x.id)); for (const pr of d.projects) if (!ids.has(pr.id)) projects.push(pr); saveProjects(); } if (d.library) { saveLibrary(d.library); lib = loadLibrary(); } toast('Imported'); renderSettings(); } catch { toast('That isn’t an Anatsi backup.'); } } }, 'Import'))]; })()))),
+    window.AnatsiAndroid ? null : el('a', { class: 'btn primary wide', href: 'download/Anatsi-1.1.apk', download: 'Anatsi-1.1.apk', style: { marginTop: '16px', display: 'block', textAlign: 'center' } }, '⤓ Get the Android app (APK, works offline)'),
     el('p', { class: 'muted tiny', style: { marginTop: '18px' } }, 'Anatsi is free and open source: no ads, no account, nothing locked. Everything stays on this phone.'));
 }
 
