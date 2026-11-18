@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3ee">
+  <meta name="description" content="Anatsi: free furniture designer and cutting list for carpenters. Kitchens, beds, wardrobes, nightstands with 3D models, sheet cutting layouts, edge banding, hardware and cost. No ads, no paywall.">
+  <title>Anatsi · furniture & cutting list</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <section id="screen-projects" class="screen" aria-label="Projects">
+    <header class="app-head">
+      <h1 class="brand"><span class="logo" aria-hidden="true"></span>Anatsi <small>አናጺ</small></h1>
+      <button id="new-project" class="btn primary" type="button">+ New project</button>
+    </header>
+    <div class="pad">
+      <h2 class="section-title">Start quickly</h2>
+      <div id="quick" class="quick-grid"></div>
+      <h2 class="section-title">Your projects</h2>
+      <div id="project-list" class="cards"></div>
+    </div>
+  </section>
+
+  <section id="screen-materials" class="screen" hidden aria-label="Materials and prices">
+    <header class="app-head"><h1 class="title">Materials & prices</h1></header>
+    <div class="pad" id="materials-body"></div>
+  </section>
+
+  <section id="screen-settings" class="screen" hidden aria-label="Settings">
+    <header class="app-head"><h1 class="title">Settings</h1></header>
+    <div class="pad" id="settings-body"></div>
+  </section>
+
+  <section id="layer-project" class="layer" hidden aria-label="Project"></section>
+  <section id="layer-item" class="layer" hidden aria-label="Design"></section>
+
+  <nav class="tabs" id="tabs" aria-label="Sections">
+    <button data-tab="projects" aria-current="page"><span aria-hidden="true">▦</span>Projects</button>
+    <button data-tab="materials"><span aria-hidden="true">▤</span>Materials</button>
+    <button data-tab="settings"><span aria-hidden="true">⚙</span>Settings</button>
+  </nav>
+
+  <div id="sheet" hidden></div>
+  <div id="busy" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="print" aria-hidden="true"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
