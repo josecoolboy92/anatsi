@@ -104,7 +104,7 @@ export class Viewer {
     requestAnimationFrame(this.loop);
   }
 
-  // groups: [{ out, offset: [x, y, z] (mm), label }]
+  // groups: [{ out, offset: [x, y, z] (mm), rot (degrees, about the vertical axis), label }]
   setModel(groups, { keepCamera = false } = {}) {
     this.clear();
     const mats = new Map();
@@ -112,7 +112,10 @@ export class Viewer {
       const f = finishById(color);
       const key = f.hex + '|' + (f.wood ? 'w' : '') + role;
       if (!mats.has(key)) {
-        const m = new THREE.MeshStandardMaterial({ color: f.wood ? 0xffffff : f.hex, map: f.wood ? woodTexture(f.hex) : null, roughness: role === 'door' ? 0.45 : 0.7, metalness: 0.02 });
+        let m;
+        if (role === 'wall') m = new THREE.MeshStandardMaterial({ color: f.hex, roughness: 0.95, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+        else if (role === 'floor') m = new THREE.MeshStandardMaterial({ color: f.wood ? 0xffffff : f.hex, map: f.wood ? woodTexture(f.hex) : null, roughness: 0.9 });
+        else m = new THREE.MeshStandardMaterial({ color: f.wood ? 0xffffff : f.hex, map: f.wood ? woodTexture(f.hex) : null, roughness: role === 'door' ? 0.45 : 0.7, metalness: 0.02 });
         mats.set(key, m);
       }
       return mats.get(key);
@@ -120,31 +123,48 @@ export class Viewer {
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b1714, transparent: true, opacity: 0.35 });
     const metal = new THREE.MeshStandardMaterial({ color: 0x8d9399, roughness: 0.35, metalness: 0.85 });
     const timber = new THREE.MeshStandardMaterial({ color: 0xc9a46a, map: woodTexture('#c9a46a'), roughness: 0.8 });
-    const box = new THREE.Box3();
     this.meshes = [];
-    for (const { out, offset = [0, 0, 0] } of groups) {
+    this.holders = [];
+    for (const { out, offset = [0, 0, 0], rot = 0 } of groups) {
       if (!out) continue;
-      const [ox, oy, oz] = offset;
+      const g = new THREE.Group();
+      g.position.set(offset[0] * S, offset[1] * S, offset[2] * S);
+      g.rotation.y = (rot * Math.PI) / 180;
+      this.root.add(g);
       for (const p of out.panels) {
         const b = p.box;
         const geo = new THREE.BoxGeometry(Math.max(1, b.w) * S, Math.max(1, b.h) * S, Math.max(1, b.d) * S);
         const mesh = new THREE.Mesh(geo, matFor(p.color, p.role));
-        mesh.castShadow = true;
+        const solid = p.role !== 'wall';
+        mesh.castShadow = solid && p.role !== 'floor';
         mesh.receiveShadow = true;
-        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat));
-        const center = new THREE.Vector3((ox + b.x + b.w / 2) * S, (oy + b.y + b.h / 2) * S, (oz + b.z + b.d / 2) * S);
+        if (solid && p.role !== 'floor') mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat));
+        const center = new THREE.Vector3((b.x + b.w / 2) * S, (b.y + b.h / 2) * S, (b.z + b.d / 2) * S);
         const holder = new THREE.Group();
         holder.userData = { panel: p, home: center.clone(), explode: p.explode || [0, 0, 0], door: p.door };
-        if (p.door && !p.door.drawer) {
-          // pivot on the hinge edge, at the back face of the door
-          const hingeLeft = p.door.hinge !== 'R';
-          const px = (ox + b.x + (hingeLeft ? 0 : b.w)) * S;
-          const pz = (oz + b.z) * S;
+        const hingeSide = p.door && !p.door.drawer ? p.door.hinge || 'L' : null;
+        if (hingeSide === 'T' || hingeSide === 'B') {
+          // flap: pivot on the top (lift-up) or bottom (drop-down desk) edge, at the back face
+          const py = (b.y + (hingeSide === 'T' ? b.h : 0)) * S;
+          const pz = b.z * S;
+          holder.position.set(center.x, py, pz);
+          mesh.position.set(0, center.y - py, center.z - pz);
+          holder.userData.pivot = holder.position.clone();
+          holder.userData.flap = hingeSide;
+          for (const hx of p.hinges || []) {
+            const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.0175, 0.0175, 0.004, 16), metal);
+            cup.rotation.x = Math.PI / 2;
+            cup.position.set((-b.w / 2 + hx) * S, (hingeSide === 'T' ? b.h / 2 - 22.5 : -b.h / 2 + 22.5) * S, (-b.d / 2 - 1) * S);
+            mesh.add(cup);
+          }
+        } else if (hingeSide) {
+          const hingeLeft = hingeSide !== 'R';
+          const px = (b.x + (hingeLeft ? 0 : b.w)) * S;
+          const pz = b.z * S;
           holder.position.set(px, center.y, pz);
           mesh.position.set(center.x - px, 0, center.z - pz);
           holder.userData.pivot = holder.position.clone();
           holder.userData.sign = hingeLeft ? -1 : 1;
-          // hinge cups on the back of the door, 22.5 mm in from the hinge edge
           for (const hy of p.hinges || []) {
             const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.0175, 0.0175, 0.004, 16), metal);
             cup.rotation.x = Math.PI / 2;
@@ -156,33 +176,43 @@ export class Viewer {
         }
         holder.add(mesh);
         mesh.userData.holder = holder;
-        this.root.add(holder);
-        this.meshes.push(mesh);
-        box.expandByPoint(new THREE.Vector3((ox + b.x) * S, (oy + b.y) * S, (oz + b.z) * S));
-        box.expandByPoint(new THREE.Vector3((ox + b.x + b.w) * S, (oy + b.y + b.h) * S, (oz + b.z + b.d) * S));
+        g.add(holder);
+        this.holders.push(holder);
+        if (p.role !== 'wall' && p.role !== 'floor') this.meshes.push(mesh);
       }
       for (const r of out.rails || []) {
         const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0125, r.len * S, 16), metal);
         rod.rotation.z = Math.PI / 2;
-        rod.position.set((ox + r.x + r.len / 2) * S, (oy + r.y) * S, (oz + r.z) * S);
+        rod.position.set((r.x + r.len / 2) * S, r.y * S, r.z * S);
         rod.castShadow = true;
-        this.root.add(rod);
+        g.add(rod);
       }
       for (const bar of out.bars || []) {
         const m = new THREE.Mesh(new THREE.BoxGeometry(bar.w * S, bar.h * S, bar.d * S), bar.kind === 'metal' ? metal : timber);
-        m.position.set((ox + bar.x + bar.w / 2) * S, (oy + bar.y + bar.h / 2) * S, (oz + bar.z + bar.d / 2) * S);
+        m.position.set((bar.x + bar.w / 2) * S, (bar.y + bar.h / 2) * S, (bar.z + bar.d / 2) * S);
         m.castShadow = true;
-        m.userData = { info: bar.kind === 'metal' ? 'Steel support' : 'Timber support' };
-        this.root.add(m);
+        g.add(m);
       }
       for (const l of out.legs || []) {
         if (!l.h) continue;
         const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.016, l.h * S, 16), l.metal ? metal : new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }));
-        leg.position.set((ox + l.x) * S, (oy + l.y + l.h / 2) * S, (oz + l.z) * S);
+        leg.position.set(l.x * S, (l.y + l.h / 2) * S, l.z * S);
         leg.castShadow = true;
-        this.root.add(leg);
+        g.add(leg);
+      }
+      // fabric skins, buttons, grooves, hooks, socket cut-outs, room openings
+      for (const mk of out.marks || []) {
+        const f = finishById(mk.color);
+        const mm = new THREE.MeshStandardMaterial({ color: f.hex, roughness: mk.soft ? 1 : 0.5, metalness: mk.metal ? 0.8 : 0, transparent: !!mk.opacity, opacity: mk.opacity || 1 });
+        const m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(1, mk.w) * S, Math.max(1, mk.h) * S, Math.max(1, mk.d) * S), mm);
+        m.position.set((mk.x + mk.w / 2) * S, (mk.y + mk.h / 2) * S, (mk.z + mk.d / 2) * S);
+        m.castShadow = !!mk.soft;
+        g.add(m);
       }
     }
+    this.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const g of this.root.children) box.expandByObject(g);
     this.bounds = box;
     if (!keepCamera || !this.fitted) this.fit();
     this.applyPose(true);
@@ -225,14 +255,16 @@ export class Viewer {
     if (Math.abs(this.cur.open - this.target.open) < 1e-3) this.cur.open = this.target.open;
     if (before === JSON.stringify(this.cur) && this.posed) return;
     this.posed = true;
-    for (const h of this.root.children) {
+    for (const h of this.holders || []) {
       const u = h.userData;
       if (!u || !u.panel) continue;
       const e = u.explode;
       const dist = 0.12 * this.cur.explode;
       const base = u.pivot || u.home;
       h.position.set(base.x + e[0] * dist, base.y + e[1] * dist, base.z + e[2] * dist);
-      if (u.door && !u.door.drawer && u.pivot) h.rotation.y = u.sign * (Math.PI * 0.55) * this.cur.open;
+      if (u.flap === 'T') h.rotation.x = -1.35 * this.cur.open;
+      else if (u.flap === 'B') h.rotation.x = (Math.PI / 2) * this.cur.open;
+      else if (u.door && !u.door.drawer && u.pivot) h.rotation.y = u.sign * (Math.PI * 0.55) * this.cur.open;
       if (u.door && u.door.drawer) h.position.z += 0.35 * this.cur.open;
       if (u.panel.role === 'drawer') h.position.z += 0.35 * this.cur.open;
     }

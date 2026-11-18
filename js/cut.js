@@ -1,5 +1,5 @@
 // Cut list, sheet layouts (nesting), edge banding, hardware and cost.
-import { finishById, matById } from './core.js';
+import { finishById, matById, priceOf } from './core.js';
 import { buildItem } from './models.js';
 
 /* ================================================================ build everything in a project */
@@ -305,14 +305,14 @@ function offcuts(sh, SL, SW, k) {
 export function costs(project, lib, layouts, edges, hwRes) {
   const s = lib.settings;
   const lines = [];
-  for (const L of layouts) lines.push({ label: `${L.material.name} · ${finishById(L.color).name}`, qty: L.sheets.length, unit: 'sheets', price: L.material.price || 0 });
+  for (const L of layouts) lines.push({ label: `${L.material.name} · ${finishById(L.color).name}`, qty: L.sheets.length, unit: 'sheets', price: priceOf(L.material, lib), key: 'mat:' + L.material.id });
   for (const e of edges) {
     const def = lib.edges.find((x) => x.id === e.edge) || {};
-    lines.push({ label: `${def.name || e.edge} · ${finishById(e.color).name}`, qty: Math.ceil(e.m), unit: 'm', price: def.price || 0 });
+    lines.push({ label: `${def.name || e.edge} · ${finishById(e.color).name}`, qty: Math.ceil(e.m), unit: 'm', price: priceOf(def, lib), key: 'edge:' + e.edge });
   }
   for (const [k, n] of Object.entries(hwRes.hw)) {
     const h = lib.hardware[k];
-    if (h) lines.push({ label: h.name, qty: n, unit: h.unit, price: h.price || 0 });
+    if (h) lines.push({ label: h.name, qty: Math.round(n * 10) / 10, unit: h.unit, price: priceOf(h, lib), key: 'hw:' + k });
   }
   const lin = new Map();
   for (const l of hwRes.linear) {
@@ -321,7 +321,7 @@ export function costs(project, lib, layouts, edges, hwRes) {
     const qty = l.area ? l.area : (l.len * l.qty) / 1000;
     lin.set(l.key, (lin.get(l.key) || 0) + qty);
   }
-  for (const [k, q] of lin) lines.push({ label: lib.hardware[k].name, qty: Math.ceil(q * 10) / 10, unit: lib.hardware[k].unit, price: lib.hardware[k].price || 0 });
+  for (const [k, q] of lin) lines.push({ label: lib.hardware[k].name, qty: Math.ceil(q * 10) / 10, unit: lib.hardware[k].unit, price: priceOf(lib.hardware[k], lib), key: 'hw:' + k });
   const materials = lines.reduce((a, l) => a + l.qty * l.price, 0);
   const labour = (materials * (project.labour ?? s.labour)) / 100;
   const subtotal = materials + labour;

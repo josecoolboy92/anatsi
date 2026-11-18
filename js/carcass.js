@@ -1,7 +1,7 @@
 // The cabinet "box" (carcass) builder shared by kitchen cabinets, cupboards, wardrobes and nightstands.
 // Frameless construction: sides run full height, bottom/top/shelves fit between the sides,
 // doors overlay the front, back panel nailed on.
-import { panel, hingePositions, autoDoors, maxShelfSpan, r5, splitToFit } from './core.js';
+import { panel, hingePositions, autoDoors, maxShelfSpan, r5, splitToFit, matById, GRADES, HINGE_TYPES } from './core.js';
 
 /*
  o = {
@@ -28,7 +28,10 @@ export function carcass(o, out, lib) {
     return p;
   };
   const hw = (k, n) => { out.hw[k] = (out.hw[k] || 0) + n; };
-  const mat = lib.materials.find((m) => m.id === o.mat);
+  const mat = matById(lib, o.mat);
+  const G = GRADES[o.grade] || GRADES.medium;
+  o.G = G;
+  o.lib = lib;
 
   const topOver = o.top === 'over';
   const sideH = topOver ? H - T : H;
@@ -122,8 +125,9 @@ export function carcass(o, out, lib) {
       add('Hat shelf' + secName, { L: secW, W: D - setback, eL: 1, role: 'shelf', box: { x: xs, y: shelfY, z: z0, w: secW, h: T, d: D - setback } });
       joints += 2;
       railY = shelfY - 60;
-      out.linear.push({ key: 'rail', name: 'Hanging rail' + secName, len: secW - 4, qty: 1 });
-      hw('railHolder', 2);
+      out.linear.push({ key: G.rail, name: 'Hanging rail' + secName, len: secW - 4, qty: 1 });
+      hw('railHolder', secW > 1000 ? 3 : 2);
+      if (secW > 1000) out.notes.push(`${pre}Rail${secName} is ${Math.round(secW)} mm long: add a middle rail support from the hat shelf.`);
       zone1 = shelfY;
       // hanging space needs ~1000 (shirts) to 1600 (dresses/coats)
       if (railY - zone0 < 1000) out.warnings.push(`${pre}Hanging space${secName} is only ${Math.round(railY - zone0)} mm. Shirts need about 1000 mm, long coats 1600 mm.`);
@@ -160,14 +164,14 @@ export function carcass(o, out, lib) {
     if (!s.open) {
       const zx0 = i === 0 ? x0 : xs - T / 2;
       const zx1 = i === n - 1 ? x0 + W : xs + secW + T / 2;
-      for (const [zy0, zy1] of doorZones) doors(o, out, add, hw, { zx0, zx1, zy0, zy1, z: z0 + D, s, secName, rows: doorZones.length });
+      for (const [zy0, zy1] of doorZones) doors(o, out, add, hw, { zx0, zx1, zy0, zy1, z: z0 + D, s, secName, rows: doorZones.length, xs, secW, yIn0, yIn1, y0, H, x0, W, z0, D });
     }
   });
 
   // ---- back panel
   if (o.back !== 'none') {
     const bt = o.backT || 3;
-    const sheet = lib.materials.find((m) => m.id === o.backMat) || lib.materials[0];
+    const sheet = matById(lib, o.backMat);
     // a back bigger than one sheet is made of strips that join behind a divider or a batten
     const sp = splitToFit(W - 4, H - 4, sheet, lib.settings ? lib.settings.trim : 10);
     const cols = sp.along === 'L' ? sp.pieces : 1;
@@ -178,67 +182,98 @@ export function carcass(o, out, lib) {
       add('Back panel' + (cols * rows > 1 ? ` ${a * rows + b + 1}/${cols * rows}` : ''), { mat: o.backMat, color: o.backColor || 'hdf', L: Math.max(ph, pw), W: Math.min(ph, pw), role: 'back', grain: false, box: { x: x0 + 2 + a * pw, y: y0 + 2 + b * ph, z: z0 - bt, w: pw, h: ph, d: bt }, explode: [0, 0, -1.5] });
     }
     if (cols * rows > 1) out.notes.push(`${pre}Back is bigger than one ${sheet.name} sheet: ${cols * rows} pieces. Make the joint${cols * rows > 2 ? 's' : ''} land on a divider, shelf or a batten so it can be nailed.`);
-    hw('nails', Math.ceil((2 * (W + H)) / 100) + (cols * rows - 1) * Math.ceil(Math.max(W, H) / 100));
+    const fixings = Math.ceil((2 * (W + H)) / (G.back === 'screwed' ? 150 : 100)) + (cols * rows - 1) * Math.ceil(Math.max(W, H) / 100);
+    if (G.back === 'screwed') { hw('screw', fixings); out.notes.push(`${pre}Back: ${sheet.T} mm, glued and screwed every 150 mm (3.5×16 screws): keeps the cabinet square for years.`); }
+    else hw('nails', fixings);
   }
   hw('confirmat', joints * 3);
   return { inW, widths, yIn0, yIn1 };
 }
 
-function doors(o, out, add, hw, { zx0, zx1, zy0, zy1, z, s, secName, rows }) {
+function doors(o, out, add, hw, { zx0, zx1, zy0, zy1, z, s, secName, rows, xs, secW, yIn0, yIn1, y0, H, x0, W }) {
   const g = o.gap ?? 3;
-  const zw = zx1 - zx0;
-  const count = s.doors === undefined || s.doors === 'auto' ? autoDoors(zw, o.maxDoor || 600) : Number(s.doors);
+  const type = o.hingeType || 'full';
+  const inset = type === 'inset';
+  const T = o.T;
+  // door area: overlay doors cover the box edges; inset doors sit inside the opening
+  let ax0 = zx0, ax1 = zx1, ay0 = zy0, ay1 = zy1;
+  if (inset) {
+    ax0 = xs; ax1 = xs + secW;
+    ay0 = zy0 <= y0 + 1 ? yIn0 : zy0 + T / 2;
+    ay1 = zy1 >= y0 + H - 1 ? yIn1 : zy1 - T / 2;
+  }
+  const zw = ax1 - ax0;
+  const flap = type === 'flap';
+  const count = flap ? 1 : s.doors === undefined || s.doors === 'auto' ? autoDoors(zw, o.maxDoor || 600) : Number(s.doors);
   if (!count) return;
-  const dw = (zw - g * count) / count;
-  const dh = zy1 - zy0 - g;
+  const gg = inset ? g : 0; // inset: gap on the outer edges too
+  const dw = (zw - g * count - (inset ? g : 0)) / count;
+  const dh = ay1 - ay0 - g - (inset ? g : 0);
   const dt = o.doorT || o.T;
   const thick = o.doorEdge !== 'none';
+  const G = o.G || GRADES.medium;
   for (let k = 0; k < count; k++) {
-    const x = zx0 + g / 2 + k * (dw + g);
-    const hinge = count === 1 ? (s.hinge || 'L') : (k % 2 === 0 ? 'L' : 'R');
-    const hp = hingePositions(dh);
+    const x = ax0 + (inset ? g : g / 2) + k * (dw + g);
+    const hinge = flap ? 'T' : s.dropDown ? 'B' : count === 1 ? (s.hinge || 'L') : (k % 2 === 0 ? 'L' : 'R');
+    // the hinge edge sits on a divider (not the outer side) → half overlay
+    const onDivider = !inset && !flap && ((hinge === 'L' && zx0 > x0 + 1) || (hinge === 'R' && zx1 < x0 + W - 1));
+    const htype = inset ? 'inset' : flap ? 'flap' : s.dropDown ? 'flap' : onDivider && (type === 'full' || type === 'push') ? 'half' : type;
+    const along = hinge === 'T' || hinge === 'B' ? dw : dh;
+    const hp = hingePositions(along);
+    const key = type === 'wide' ? 'hingeWide' : G.hinge;
+    const where = hinge === 'T' ? 'along the top edge' : hinge === 'B' ? 'along the bottom edge' : `on the ${hinge === 'L' ? 'left' : 'right'}`;
     add('Door' + secName + (rows > 1 ? (zy0 < (o.y0 || 0) + 10 ? ' (lower)' : ' (upper)') : ''), {
       mat: o.doorMat || o.mat, color: o.doorColor || o.color, L: dh, W: dw, eL: thick ? 2 : 0, eW: thick ? 2 : 0, edge: 'thick', role: 'door',
-      box: { x, y: zy0 + g / 2, z, w: dw, h: dh, d: dt },
-      door: { hinge }, hinges: hp, explode: [0, 0, 2],
-      note: `Hinges on the ${hinge === 'L' ? 'left' : 'right'}: ${hp.length} × Ø35 cups at ${hp.join(', ')} mm from the top, 22.5 mm in from the edge, 13 mm deep`,
+      box: { x, y: ay0 + (inset ? g : g / 2), z: inset ? z - dt : z, w: dw, h: dh, d: dt },
+      door: { hinge, hingeType: htype }, hinges: hp, explode: [0, 0, 2],
+      note: `${HINGE_TYPES[htype].name}, ${where}: ${hp.length} × Ø35 cups at ${hp.join(', ')} mm from the ${hinge === 'T' || hinge === 'B' ? 'left' : 'top'} end, centre 22.5 mm in from the edge, ${dt >= 18 ? 13 : 12} mm deep`,
     });
-    hw('hinge', hp.length);
-    hw('handle', 1);
+    hw(key, hp.length);
+    if (type === 'push') hw('pushLatch', 1); else hw('handle', 1);
+    if (flap) hw('flapStay', 1);
+    if (s.dropDown) hw('flapStay', 1);
   }
-  if (dw > (o.maxDoor || 600) + 1) out.warnings.push(`Doors${secName} are ${Math.round(dw)} mm wide. Above ~600 mm they sag and swing into the room: use more doors.`);
+  if (dw > (o.maxDoor || 600) + 1 && !flap && !s.dropDown) out.warnings.push(`Doors${secName} are ${Math.round(dw)} mm wide. Above ~600 mm they sag and swing into the room: use more doors.`);
+  if (flap && dw > 1200) out.warnings.push(`Lift-up flap${secName} is ${Math.round(dw)} mm wide: over 1200 mm use two flaps or a bi-fold lift.`);
 }
 
 function drawers(o, out, add, hw, { n, xs, secW, zx0, zx1, f0, f1, inner0, inner1, z0, D, secName }) {
   const g = o.gap ?? 3;
-  const fh = (f1 - f0 - g * n) / n;
   const dt = o.doorT || o.T;
   const thick = o.doorEdge !== 'none';
   const bt = o.drawerT || o.T;
-  const slide = Math.max(250, Math.min(600, Math.floor((D - 30) / 50) * 50));
+  const inset = o.hingeType === 'inset';
+  const G = o.G || GRADES.medium;
+  const slideKey = G.slide;
+  const sideGap = slideKey === 'slideSoft' ? 5 : 13;
+  const slide = Math.max(250, Math.min(600, Math.floor((D - 30 - (inset ? dt : 0)) / 50) * 50));
+  if (inset) { f0 = inner0; f1 = inner1; zx0 = xs; zx1 = xs + secW; }
+  const fh = (f1 - f0 - g * n - (inset ? g : 0)) / n;
   const innerEach = (inner1 - inner0) / n;
   const boxH = Math.max(70, Math.min(fh - 50, innerEach - 30));
-  const boxW = secW - 26; // 13 mm per side for ball-bearing slides
-  const fw = zx1 - zx0 - g; // fronts overlay the sides / half of each divider
+  const boxW = secW - 2 * sideGap; // slide clearance each side
+  const fw = zx1 - zx0 - g - (inset ? g : 0); // fronts overlay the sides / half of each divider
   for (let k = 0; k < n; k++) {
-    const y = f0 + g / 2 + k * (fh + g);
+    const y = f0 + (inset ? g : g / 2) + k * (fh + g);
     add('Drawer front' + secName, {
       mat: o.doorMat || o.mat, color: o.doorColor || o.color, L: fw, W: fh, eL: thick ? 2 : 0, eW: thick ? 2 : 0, edge: 'thick', role: 'door', grain: true,
-      box: { x: zx0 + g / 2, y, z: z0 + D, w: fw, h: fh, d: dt }, explode: [0, 0, 2.2], door: { drawer: true },
+      box: { x: zx0 + (inset ? g : g / 2), y, z: inset ? z0 + D - dt : z0 + D, w: fw, h: fh, d: dt }, explode: [0, 0, 2.2], door: { drawer: true },
     });
     const by = Math.max(inner0 + k * innerEach + 15, inner0);
-    const bz = z0 + D - slide;
+    const bz = z0 + D - slide - (inset ? dt : 0);
     const m = o.drawerMat || o.mat;
     const c = o.drawerColor || o.color;
-    add('Drawer side' + secName, { mat: m, color: c, L: slide, W: boxH, eL: 1, role: 'drawer', box: { x: xs + 13, y: by, z: bz, w: bt, h: boxH, d: slide }, explode: [0, 0, 1.6] });
-    add('Drawer side' + secName, { mat: m, color: c, L: slide, W: boxH, eL: 1, role: 'drawer', box: { x: xs + 13 + boxW - bt, y: by, z: bz, w: bt, h: boxH, d: slide }, explode: [0, 0, 1.6] });
-    add('Drawer front (inner)' + secName, { mat: m, color: c, L: boxW - 2 * bt, W: boxH, eL: 1, role: 'drawer', box: { x: xs + 13 + bt, y: by, z: bz + slide - bt, w: boxW - 2 * bt, h: boxH, d: bt }, explode: [0, 0, 1.6] });
-    add('Drawer back' + secName, { mat: m, color: c, L: boxW - 2 * bt, W: boxH, eL: 1, role: 'drawer', box: { x: xs + 13 + bt, y: by, z: bz, w: boxW - 2 * bt, h: boxH, d: bt }, explode: [0, 0, 1.6] });
-    add('Drawer bottom' + secName, { mat: o.hdfMat || o.backMat || 'hdf3', color: 'hdf', L: slide, W: boxW, role: 'drawer', grain: false, box: { x: xs + 13, y: by - 3, z: bz, w: boxW, h: 3, d: slide }, explode: [0, 0, 1.6] });
-    hw('slide', 1);
+    add('Drawer side' + secName, { mat: m, color: c, L: slide, W: boxH, eL: 1, role: 'drawer', box: { x: xs + sideGap, y: by, z: bz, w: bt, h: boxH, d: slide }, explode: [0, 0, 1.6] });
+    add('Drawer side' + secName, { mat: m, color: c, L: slide, W: boxH, eL: 1, role: 'drawer', box: { x: xs + sideGap + boxW - bt, y: by, z: bz, w: bt, h: boxH, d: slide }, explode: [0, 0, 1.6] });
+    add('Drawer front (inner)' + secName, { mat: m, color: c, L: boxW - 2 * bt, W: boxH, eL: 1, role: 'drawer', box: { x: xs + sideGap + bt, y: by, z: bz + slide - bt, w: boxW - 2 * bt, h: boxH, d: bt }, explode: [0, 0, 1.6] });
+    add('Drawer back' + secName, { mat: m, color: c, L: boxW - 2 * bt, W: boxH, eL: 1, role: 'drawer', box: { x: xs + sideGap + bt, y: by, z: bz, w: boxW - 2 * bt, h: boxH, d: bt }, explode: [0, 0, 1.6] });
+    const bm = o.hdfMat || o.backMat || '@back';
+    const bT = matById(o.lib, bm).T;
+    add('Drawer bottom' + secName, { mat: bm, color: 'hdf', L: slide, W: boxW, role: 'drawer', grain: false, box: { x: xs + sideGap, y: by - bT, z: bz, w: boxW, h: bT, d: slide }, explode: [0, 0, 1.6] });
+    hw(slideKey, 1);
     hw('handle', 1);
     hw('screw', 8);
   }
-  out.notes.push(`Drawers${secName}: ${n} × ball-bearing slides ${slide} mm (full extension); boxes ${Math.round(boxW)} mm wide × ${Math.round(boxH)} mm high (13 mm slide gap each side).`);
+  out.notes.push(`Drawers${secName}: ${n} × ${slideKey === 'slideSoft' ? 'soft-close undermount slides' : slideKey === 'slideRoller' ? 'roller runners' : 'ball-bearing slides (full extension)'} ${slide} mm; boxes ${Math.round(boxW)} mm wide × ${Math.round(boxH)} mm high (${sideGap} mm slide gap each side).`);
   if (fh < 100) out.warnings.push(`Drawer fronts${secName} are only ${Math.round(fh)} mm high: use fewer drawers.`);
 }

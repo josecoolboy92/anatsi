@@ -1,6 +1,7 @@
 // Anatsi — furniture designer + cutting list for carpenters. No ads, no paywall, works offline.
 import { $, el, toast, sheet, confirmBox, downloadBlob, storage, uid } from './util.js';
-import { loadLibrary, saveLibrary, FINISHES, finishById, fmtLen, toMM, fromMM, matById, DEFAULT_MATERIALS } from './core.js';
+import { loadLibrary, saveLibrary, FINISHES, finishById, fmtLen, toMM, fromMM, matById, DEFAULT_MATERIALS, ROLE_MATS, ROLE_NAMES, priceOf, HINGE_TYPES, hingeGuide, GRADES } from './core.js';
+import { defaultRoom, WALLS, WALL_NAMES, footprint, aabb, corners, placeAgainst, autoArrange, checkRoom, syncCutouts, roomOut, freeSpans, wallLen, wallPoint, backWall } from './room.js';
 import { MODELS, defaults, buildItem } from './models.js';
 import { buildProject, cutList, edgeBanding, hardware, layoutSheets, costs } from './cut.js';
 import { sheetSVG, ROLE_COLORS } from './diagram.js';
@@ -12,7 +13,9 @@ Element.prototype.replaceChildren = function (...kids) { return _rc.apply(this, 
 let lib = loadLibrary();
 let projects = storage.get('anatsi.projects', []);
 const saveProjects = () => storage.set('anatsi.projects', projects);
-const saveLib = () => saveLibrary({ materials: lib.materials, edges: lib.edges, hardware: lib.hardware, settings: lib.settings });
+const saveLib = () => saveLibrary({ materials: lib.materials, edges: lib.edges, hardware: lib.hardware, settings: lib.settings, roles: lib.roles });
+const region = () => lib.settings.region || 'et';
+const inRegion = (m) => !m.region || m.region === 'all' || m.region === region();
 const U = () => lib.settings.units;
 const L = (mm, unit = true) => fmtLen(mm, U(), unit);
 const money = (v) => `${Math.round(v).toLocaleString()} ${lib.settings.currency}`;
@@ -71,20 +74,22 @@ function newItem(model, extra = {}) {
 
 const QUICK = [
   { label: 'Kitchen from my wall', icon: '🍳', sub: 'Enter the wall length', make: () => [newItem('kitchenRun', { name: 'Kitchen' })] },
+  { label: 'Plan a room', icon: '📐', sub: 'Room size, sockets, TV → furniture fitted', tab: 'room', room: true, make: () => [newItem('bed', { name: 'Queen bed', params: MODELS.bed.presets['Hotel queen (1600×2000)'] }), newItem('combo', { name: 'Wardrobe + desk', params: MODELS.combo.presets['Small room 1.8 m (fold-down desk)'] })] },
   { label: 'Hotel room set', icon: '🏨', sub: 'Queen bed, nightstands, wardrobe', make: () => [newItem('bed', { name: 'Queen bed', params: MODELS.bed.presets['Hotel queen (1600×2000)'] }), newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets['Hotel wardrobe 900'] })] },
   { label: 'Joinable twin beds', icon: '🛏️', sub: '2 twins that make a king', make: () => [newItem('bed', { name: 'Twin beds', params: MODELS.bed.presets['Joinable twins → king (2× 900×2000)'] })] },
   { label: 'Wardrobe', icon: '🚪', sub: 'Doors, shelves, rail', make: () => [newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets['Wardrobe 3-door 1500'] })] },
   { label: 'Bookcase / cupboard', icon: '📚', sub: 'Open or closed', make: () => [newItem('cupboard', { name: 'Bookcase', params: MODELS.cupboard.presets['Bookcase open'] })] },
-  { label: 'Cutting list only', icon: '📐', sub: 'Type in your parts', make: () => [newItem('custom', { name: 'My parts' })] },
+  { label: 'Cutting list only', icon: '✂️', sub: 'Type in your parts', make: () => [newItem('custom', { name: 'My parts' })] },
 ];
 
 function renderProjects() {
   $('#quick').replaceChildren(...QUICK.map((q) => el('button', { class: 'quick', type: 'button', onclick: () => {
     const p = newProject(q.label);
     p.items.push(...q.make());
+    if (q.room) p.room = defaultRoom();
     saveProjects();
-    openProject(p);
-    if (p.items.length === 1) setTimeout(() => openItem(p, p.items[0]), 60);
+    openProject(p, q.tab || 'items');
+    if (p.items.length === 1 && !q.tab) setTimeout(() => openItem(p, p.items[0]), 60);
   } }, el('span', {}, q.icon), el('b', {}, q.label), el('small', {}, q.sub))));
   const list = $('#project-list');
   if (!projects.length) {
@@ -125,7 +130,7 @@ function ask(title, placeholder = '', value = '') {
 }
 
 /* ================================================================ project screen */
-function openProject(p) {
+function openProject(p, startTab = 'items') {
   const host = $('#layer-project');
   let current = 'items';
   let viewer = null;
@@ -133,7 +138,7 @@ function openProject(p) {
   nameBtn.addEventListener('click', async () => { const n = await ask('Rename project', '', p.name); if (n) { p.name = n; nameBtn.textContent = n; touch(); } });
   const tabsBar = el('div', { class: 'layer-tabs', role: 'tablist' });
   const body = el('div', { class: 'layer-body' });
-  const TABS = [['items', 'Furniture'], ['3d', '3D'], ['cut', 'Cut list'], ['sheets', 'Sheets'], ['cost', 'Cost']];
+  const TABS = [['items', 'Furniture'], ['room', 'Room'], ['3d', '3D'], ['cut', 'Cut list'], ['sheets', 'Sheets'], ['cost', 'Cost']];
   const touch = () => { p.updated = Date.now(); saveProjects(); };
 
   const show = (t) => {
@@ -141,7 +146,7 @@ function openProject(p) {
     tabsBar.querySelectorAll('button').forEach((b) => (b.dataset.t === t ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
     if (viewer) { viewer.destroy(); viewer = null; }
     body.scrollTop = 0;
-    ({ items: renderItems, '3d': render3D, cut: renderCut, sheets: renderSheets, cost: renderCost })[t]();
+    ({ items: renderItems, room: renderRoom, '3d': render3D, cut: renderCut, sheets: renderSheets, cost: renderCost })[t]();
   };
   tabsBar.replaceChildren(...TABS.map(([k, label]) => el('button', { type: 'button', 'data-t': k, onclick: () => show(k) }, label)));
 
@@ -195,24 +200,286 @@ function openProject(p) {
   }
 
   async function render3D() {
-    const box = el('div', { class: 'view3d', style: { height: 'calc(100dvh - 120px)' } });
+    const inRoom = p.room && p.items.some((i) => i.place) && p.view3d !== 'items';
+    const box = el('div', { class: 'view3d', style: { height: 'calc(100dvh - 170px)' } });
     const info = el('div', { class: 'pick-info', hidden: true });
     const tools = viewTools(() => viewer);
     box.append(info, tools);
-    body.replaceChildren(box);
+    const seg = p.room && p.items.some((i) => i.place) ? el('div', { class: 'seg', style: { margin: '8px' } },
+      el('button', { type: 'button', 'aria-pressed': String(inRoom), onclick: () => { p.view3d = 'room'; touch(); show('3d'); } }, 'In the room'),
+      el('button', { type: 'button', 'aria-pressed': String(!inRoom), onclick: () => { p.view3d = 'items'; touch(); show('3d'); } }, 'Side by side')) : null;
+    body.replaceChildren(seg, box);
     viewer = await makeViewer(box, { onPick: (pn) => showPick(info, pn) });
     if (!viewer) return;
     const groups = [];
-    let cursor = 0;
-    for (const it of p.items) {
-      try {
-        const out = buildItem(it, lib);
-        const ox = cursor - (out.offsetX || 0);
-        groups.push({ out, offset: [ox, 0, 0] });
-        cursor += out.size.w + 700;
-      } catch { /* skip broken item */ }
+    if (inRoom) {
+      groups.push({ out: roomOut(p.room) });
+      for (const it of p.items) {
+        if (!it.place) continue;
+        try { groups.push({ out: buildItem(it, lib), offset: [it.place.x, 0, it.place.z], rot: it.place.rot || 0 }); } catch { /* skip */ }
+      }
+    } else {
+      let cursor = 0;
+      for (const it of p.items) {
+        try {
+          const out = buildItem(it, lib);
+          const ox = cursor - (out.offsetX || 0);
+          groups.push({ out, offset: [ox, 0, 0] });
+          cursor += out.size.w + 700;
+        } catch { /* skip broken item */ }
+      }
     }
     viewer.setModel(groups);
+  }
+
+
+  /* ------------------------------------------------------------ ROOM: plan, placement, checks */
+  function entriesOf() {
+    return p.items.map((item) => { try { const out = buildItem(item, lib); return { item, out, fp: footprint(out) }; } catch { return null; } }).filter(Boolean);
+  }
+  let selId = null;
+  function renderRoom() {
+    if (!p.room) {
+      body.replaceChildren(el('div', { class: 'pad' },
+        el('p', {}, 'Enter the room’s size, its doors, windows, sockets and TV. The app places your furniture, checks the walkways, puts socket holes in the headboard and tells you the right TV size.'),
+        el('button', { class: 'btn primary wide', type: 'button', onclick: () => { p.room = defaultRoom(); touch(); renderRoom(); } }, '+ Add the room')));
+      return;
+    }
+    const room = p.room;
+    let entries = entriesOf();
+    if (syncCutouts(room, entries)) { touch(); entries = entriesOf(); }
+    const planBox = el('div', { class: 'plan-box' });
+    const tools = el('div', { class: 'plan-tools' });
+    const checks = el('div', {});
+    const unplaced = el('div', {});
+    const refresh = () => {
+      entries = entriesOf();
+      if (syncCutouts(room, entries)) entries = entriesOf();
+      touch();
+      planBox.replaceChildren(planSVG(room, entries));
+      drawTools();
+      drawChecks();
+    };
+    function drawChecks() {
+      const msgs = checkRoom(room, entries);
+      const icon = { warn: '⚠', ok: '✓', tip: '💡' };
+      checks.replaceChildren(el('h2', { class: 'section-title' }, 'Room check'), el('ul', { class: 'checks' }, msgs.map((m) => el('li', { class: m.level }, el('span', {}, icon[m.level]), m.text))));
+      const free = entries.filter((e) => !e.item.place);
+      unplaced.replaceChildren(free.length ? [el('h2', { class: 'section-title' }, 'Not in the room yet'), el('div', { class: 'chips' }, free.map((e) => el('button', { type: 'button', onclick: () => { autoArrange(room, [e, ...entries.filter((x) => x.item.place)]); selId = e.item.id; refresh(); } }, `+ ${e.item.name}`)))] : null);
+    }
+    function drawTools() {
+      const e = entries.find((x) => x.item.id === selId && x.item.place);
+      if (!e) {
+        tools.replaceChildren(el('div', { class: 'row' },
+          el('button', { class: 'btn primary', type: 'button', onclick: () => { const r = autoArrange(room, entries, true); refresh(); const bad = r.filter((x) => !x.ok).length; toast(bad ? `${bad} item${bad > 1 ? 's' : ''} didn’t fit` : r.some((x) => x.tight) ? 'Arranged, but the room is tight: see the checks' : 'Arranged'); } }, '✨ Arrange automatically'),
+          el('button', { class: 'btn', type: 'button', onclick: () => room3D() }, '🧊 See it in 3D'),
+          el('button', { class: 'btn', type: 'button', onclick: () => designForWall() }, '📏 Design for a wall')),
+        el('p', { class: 'muted tiny' }, 'Tap a piece of furniture to move it. Drag it, or use the buttons.'));
+        return;
+      }
+      const it = e.item;
+      const move = (dx, dz) => { it.place.x += dx; it.place.z += dz; refresh(); };
+      const wall = backWall(room, e.fp, it.place);
+      const box = aabb(e.fp, it.place);
+      const pos = wall ? (wall === 'A' || wall === 'C' ? box.x0 : box.z0) : null;
+      tools.replaceChildren(
+        el('div', { class: 'row-between' }, el('b', {}, it.name), el('button', { class: 'btn small', type: 'button', onclick: () => { selId = null; refresh(); } }, 'Done')),
+        el('p', { class: 'muted tiny' }, wall ? `Against ${WALL_NAMES[wall]}, ${L(pos)} from its ${wall === 'A' || wall === 'C' ? 'left' : 'top'} corner.` : `Free standing at ${L(box.x0)}, ${L(box.z0)}.`),
+        el('div', { class: 'row' }, el('span', { class: 'muted tiny' }, 'Back against:'), WALLS.map((w) => el('button', { class: 'btn small' + (wall === w ? ' primary' : ''), type: 'button', onclick: () => { const c = wall === w && pos !== null ? null : wallLen(room, w) / 2; it.place = placeAgainst(room, e.fp, w, c ?? wallLen(room, w) / 2); refresh(); } }, w))),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn small', type: 'button', 'aria-label': 'Left', onclick: () => move(-50, 0) }, '◀'),
+          el('button', { class: 'btn small', type: 'button', 'aria-label': 'Right', onclick: () => move(50, 0) }, '▶'),
+          el('button', { class: 'btn small', type: 'button', 'aria-label': 'Up', onclick: () => move(0, -50) }, '▲'),
+          el('button', { class: 'btn small', type: 'button', 'aria-label': 'Down', onclick: () => move(0, 50) }, '▼'),
+          wall ? el('button', { class: 'btn small', type: 'button', onclick: () => { it.place = placeAgainst(room, e.fp, wall, wallLen(room, wall) / 2); refresh(); } }, 'Centre') : null,
+          el('button', { class: 'btn small', type: 'button', onclick: () => { it.place.rot = ((it.place.rot || 0) + 90) % 360; refresh(); } }, '⟳ Turn'),
+          el('button', { class: 'btn small', type: 'button', onclick: () => { delete it.place; selId = null; refresh(); } }, 'Take out'),
+          el('button', { class: 'btn small', type: 'button', onclick: () => openItem(p, it) }, 'Edit design')),
+        el('p', { class: 'muted tiny' }, 'Arrows move 50 mm.'));
+    }
+    function planSVG(room, entries) {
+      const NS = 'http://www.w3.org/2000/svg';
+      const S = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); n.append(...kids.flat().filter((k) => k != null)); return n; };
+      const m = 450;
+      const svg = S('svg', { viewBox: `${-m} ${-m} ${room.L + 2 * m} ${room.W + 2 * m}`, class: 'plan', role: 'img', 'aria-label': 'Room plan' });
+      svg.append(S('rect', { x: -100, y: -100, width: room.L + 200, height: room.W + 200, fill: '#57534e' }), S('rect', { x: 0, y: 0, width: room.L, height: room.W, fill: '#f6f0e6' }));
+      const txt = (x, y, t, size = 150, attrs = {}) => S('text', { x, y, 'font-size': size, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: '#44403c', ...attrs }, t);
+      svg.append(txt(room.L / 2, -270, `A · ${L(room.L)}`, 150, { 'font-weight': 700 }), txt(room.L / 2, room.W + 270, 'C', 150, { 'font-weight': 700 }),
+        txt(room.L + 270, room.W / 2, `B · ${L(room.W)}`, 130, { 'font-weight': 700, transform: `rotate(90 ${room.L + 270} ${room.W / 2})` }), txt(-270, room.W / 2, 'D', 150, { 'font-weight': 700 }));
+      const seg = (wall, pos, w, d0, d1) => { const a = wallPoint(room, wall, pos, d0); const b = wallPoint(room, wall, pos + w, d1); return { x: Math.min(a.x, b.x), y: Math.min(a.z, b.z), width: Math.abs(b.x - a.x) || 1, height: Math.abs(b.z - a.z) || 1 }; };
+      for (const d of room.doors || []) {
+        if (d.type === 'window') {
+          svg.append(S('rect', { ...seg(d.wall, d.pos, d.w, -100, 0), fill: '#bfdbfe', stroke: '#2563eb', 'stroke-width': 12 }));
+        } else {
+          svg.append(S('rect', { ...seg(d.wall, d.pos, d.w, -100, 0), fill: '#f6f0e6' }));
+          const hingeAt = d.swing === 'R' ? d.pos + d.w : d.pos;
+          const h = wallPoint(room, d.wall, hingeAt, 0);
+          const tip = wallPoint(room, d.wall, hingeAt, d.w);
+          const end = wallPoint(room, d.wall, d.swing === 'R' ? d.pos : d.pos + d.w, 0);
+          svg.append(S('path', { d: `M${h.x} ${h.z} L${tip.x} ${tip.z} A${d.w} ${d.w} 0 0 ${['A', 'B'].includes(d.wall) === (d.swing === 'R') ? 1 : 0} ${end.x} ${end.z}`, fill: '#fde68a55', stroke: '#a16207', 'stroke-width': 14 }));
+        }
+      }
+      for (const tv of room.tv || []) {
+        const w = (tv.size || 50) * 25.4 * 0.872;
+        svg.append(S('rect', { ...seg(tv.wall, tv.pos - w / 2, w, 0, 50), fill: '#111' }));
+        const c = wallPoint(room, tv.wall, tv.pos, 160);
+        svg.append(txt(c.x, c.z, `TV ${tv.size || ''}″`, 100, { fill: '#111' }));
+      }
+      for (const s of room.sockets || []) {
+        const c = wallPoint(room, s.wall, s.pos, 60);
+        svg.append(S('circle', { cx: c.x, cy: c.z, r: 55, fill: s.type === 'switch' ? '#fff' : '#facc15', stroke: '#713f12', 'stroke-width': 12 }));
+        const lc = wallPoint(room, s.wall, s.pos, 170);
+        svg.append(txt(lc.x, lc.z, `${s.type === 'switch' ? 'sw' : '⚡'}${Math.round(s.y)}`, 80, { fill: '#713f12' }));
+      }
+      const fills = { bed: '#e7d3bd', combo: '#d6c7a9', cupboard: '#d6c7a9', kitchenRun: '#cbd5e1', kitchenBase: '#cbd5e1', kitchenWall: '#cbd5e1', kitchenTall: '#cbd5e1', nightstand: '#e7d3bd', custom: '#e5e7eb' };
+      for (const e of entries) {
+        if (!e.item.place) continue;
+        const pl = e.item.place;
+        const sel = e.item.id === selId;
+        const g = S('g', { class: 'plan-item', 'data-id': e.item.id });
+        const poly = (pts) => pts.map((q) => `${q.x},${q.z}`).join(' ');
+        const outline = corners(e.fp, pl);
+        g.append(S('polygon', { points: poly(outline), fill: fills[e.item.model] || '#e5e7eb', stroke: sel ? '#c2410c' : '#57534e', 'stroke-width': sel ? 30 : 12 }));
+        for (const pn of e.out.panels) {
+          if (['back', 'drawer', 'door'].includes(pn.role) || pn.box.y > 1400) continue;
+          const b = pn.box;
+          g.append(S('polygon', { points: poly(corners({ x0: b.x, x1: b.x + b.w, z0: b.z, z1: b.z + b.d }, pl)), fill: finishById(pn.color).hex, 'fill-opacity': 0.55, stroke: '#57534e', 'stroke-width': 4 }));
+        }
+        const bx = aabb(e.fp, pl);
+        g.append(txt((bx.x0 + bx.x1) / 2, (bx.z0 + bx.z1) / 2, e.item.name, Math.min(160, (bx.x1 - bx.x0) / 6), { 'font-weight': 700, fill: '#1c1917', 'pointer-events': 'none' }));
+        svg.append(g);
+      }
+      // dragging
+      let drag = null;
+      const toMMpt = (ev) => { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return { x: q.x, z: q.y }; };
+      svg.addEventListener('pointerdown', (ev) => {
+        const g = ev.target.closest('.plan-item');
+        if (!g) return;
+        const e = entries.find((x) => x.item.id === g.dataset.id);
+        if (!e) return;
+        if (selId !== e.item.id) { selId = e.item.id; drawTools(); svg.querySelectorAll('.plan-item polygon:first-child').forEach((n) => n.setAttribute('stroke-width', 12)); g.firstChild.setAttribute('stroke-width', 30); g.firstChild.setAttribute('stroke', '#c2410c'); }
+        drag = { e, g, start: toMMpt(ev), moved: false };
+        svg.setPointerCapture(ev.pointerId);
+        ev.preventDefault();
+      });
+      svg.addEventListener('pointermove', (ev) => {
+        if (!drag) return;
+        const q = toMMpt(ev);
+        const dx = q.x - drag.start.x;
+        const dz = q.z - drag.start.z;
+        if (Math.hypot(dx, dz) > 20) drag.moved = true;
+        drag.g.setAttribute('transform', `translate(${dx} ${dz})`);
+        drag.d = { dx, dz };
+      });
+      const end = () => {
+        if (!drag) return;
+        const { e, d, moved } = drag;
+        drag = null;
+        if (moved && d) {
+          const pl = e.item.place;
+          pl.x += Math.round(d.dx / 10) * 10;
+          pl.z += Math.round(d.dz / 10) * 10;
+          // snap to walls within 150 mm
+          const b = aabb(e.fp, pl);
+          if (Math.abs(b.x0) < 150) pl.x -= b.x0;
+          if (Math.abs(b.z0) < 150) pl.z -= b.z0;
+          if (Math.abs(room.L - b.x1) < 150) pl.x += room.L - b.x1;
+          if (Math.abs(room.W - b.z1) < 150) pl.z += room.W - b.z1;
+        }
+        refresh();
+      };
+      svg.addEventListener('pointerup', end);
+      svg.addEventListener('pointercancel', end);
+      return svg;
+    }
+    function room3D() {
+      const box = el('div', { class: 'view3d', style: { height: '62dvh' } });
+      const info = el('div', { class: 'pick-info', hidden: true });
+      box.append(info, viewTools(() => viewer));
+      const close = sheet('Room in 3D', [box, el('p', { class: 'muted tiny' }, 'Walls are see-through. Yellow = sockets on the plan, white squares = sockets and switches on the walls.')], { onClose: () => { if (viewer) { viewer.destroy(); viewer = null; } } });
+      makeViewer(box, { onPick: (pn) => showPick(info, pn) }).then((v) => {
+        viewer = v;
+        if (!v) return;
+        v.setModel([{ out: roomOut(room) }, ...entries.filter((e) => e.item.place).map((e) => ({ out: e.out, offset: [e.item.place.x, 0, e.item.place.z], rot: e.item.place.rot || 0 }))]);
+      });
+      return close;
+    }
+    function designForWall() {
+      const pick = el('div', {});
+      const show = (w) => {
+        const spans = freeSpans(room, w, entries.filter((e) => e.item.id !== selId));
+        pick.replaceChildren(
+          el('p', { class: 'muted tiny' }, spans.length ? `Free on ${WALL_NAMES[w]} (between doors and furniture):` : 'No free space on this wall.'),
+          spans.map(([a, b]) => el('div', { class: 'card', style: { marginBottom: '8px' } },
+            el('b', {}, `${L(b - a)} free`), el('span', { class: 'muted tiny' }, ` · from ${L(a)} to ${L(b)}`),
+            el('div', { class: 'row', style: { marginTop: '6px' } },
+              el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('combo', w, a, b) }, '🧥 Wardrobe + desk + coat'),
+              el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('cupboard', w, a, b) }, '🚪 Wardrobe'),
+              el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('kitchenRun', w, a, b) }, '🍳 Kitchen')))));
+      };
+      let closeFn = null;
+      const addFitted = (model, w, a, b) => {
+        const len = Math.floor((b - a) / 10) * 10;
+        const params = model === 'combo' ? { space: len, ceil: room.H, height: Math.min(2200, room.H - 100) }
+          : model === 'kitchenRun' ? { wallLen: len, ceiling: room.H }
+          : { ...MODELS.cupboard.presets['Wardrobe 3-door 1500'], width: Math.min(len, 2400), height: Math.min(2200, room.H - 100) };
+        const it = newItem(model, { name: model === 'combo' ? 'Wardrobe + desk' : model === 'kitchenRun' ? 'Kitchen' : 'Wardrobe', params });
+        p.items.push(it);
+        const out = buildItem(it, lib);
+        const fp = footprint(out);
+        it.place = placeAgainst(room, fp, w, a + (fp.x1 - fp.x0) / 2);
+        selId = it.id;
+        closeFn();
+        refresh();
+        toast(`${it.name} fitted to ${L(len)} on ${WALL_NAMES[w]}`);
+      };
+      closeFn = sheet('Design for a wall', [el('div', { class: 'seg' }, WALLS.map((w) => el('button', { type: 'button', onclick: (ev) => { ev.currentTarget.parentNode.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false')); ev.currentTarget.setAttribute('aria-pressed', 'true'); show(w); } }, `Wall ${w}`))), pick]);
+      show('A');
+    }
+    // room form
+    const sizeFields = [
+      { k: 'L', label: 'Length of walls A and C', type: 'num', len: true, min: 1000, max: 20000 },
+      { k: 'W', label: 'Length of walls B and D', type: 'num', len: true, min: 1000, max: 20000 },
+      { k: 'H', label: 'Ceiling height', type: 'num', len: true, min: 2000, max: 6000 },
+    ];
+    const wallOpt = WALLS.map((w) => [w, `Wall ${w}`]);
+    const lists = [
+      { k: 'doors', label: 'Doors and windows', type: 'list', help: 'Position = distance from the wall’s left end on the plan (top end for walls B and D) to the edge of the opening.', fields: [
+        { k: 'type', label: 'Type', type: 'sel', def: 'door', opts: [['door', 'Door'], ['window', 'Window']] },
+        { k: 'wall', label: 'Wall', type: 'sel', def: 'C', opts: wallOpt },
+        { k: 'pos', label: 'Position', type: 'num', len: true, def: 500, min: 0 },
+        { k: 'w', label: 'Width', type: 'num', len: true, def: 900, min: 300 },
+        { k: 'h', label: 'Height', type: 'num', len: true, def: 2100, min: 300 },
+        { k: 'y', label: 'Window sill height (0 for doors)', type: 'num', len: true, def: 0, min: 0 },
+        { k: 'swing', label: 'Door hinge side', type: 'sel', def: 'L', opts: [['L', 'Left end'], ['R', 'Right end']] },
+      ] },
+      { k: 'sockets', label: 'Sockets and switches', type: 'list', help: 'Position = distance from the wall’s left end (top end for B and D) to the CENTRE of the socket.', fields: [
+        { k: 'type', label: 'Type', type: 'sel', def: 'socket', opts: [['socket', 'Socket'], ['usb', 'USB socket'], ['switch', 'Switch']] },
+        { k: 'wall', label: 'Wall', type: 'sel', def: 'A', opts: wallOpt },
+        { k: 'pos', label: 'Position (centre)', type: 'num', len: true, def: 500, min: 0 },
+        { k: 'y', label: 'Height (centre)', type: 'num', len: true, def: 300, min: 0 },
+      ] },
+      { k: 'tv', label: 'TV', type: 'list', help: 'Add one TV. The app checks the distance from the bed and the mounting height.', fields: [
+        { k: 'wall', label: 'Wall', type: 'sel', def: 'C', opts: wallOpt },
+        { k: 'pos', label: 'Position (centre)', type: 'num', len: true, def: 2000, min: 0 },
+        { k: 'y', label: 'Height of the TV centre', type: 'num', len: true, def: 1100, min: 300 },
+        { k: 'size', label: 'Screen size (inches)', type: 'num', def: 50, min: 19, max: 100 },
+      ] },
+    ];
+    const form = el('div', { class: 'form', style: { padding: 0 } });
+    let formT = 0;
+    const drawForm = () => {
+      form.replaceChildren(
+        el('details', { open: !entries.some((e) => e.item.place) }, el('summary', {}, 'Room size'), el('div', { class: 'fields' }, sizeFields.map((f) => fieldRow(f, room[f.k], (v) => { room[f.k] = v; clearTimeout(formT); formT = setTimeout(refresh, 300); })))),
+        lists.map((f) => el('details', {}, el('summary', {}, `${f.label} (${(room[f.k] || []).length})`), el('div', { class: 'fields' }, fieldRow({ ...f, k: f.k === 'tv' ? 'tv' : f.k }, room[f.k] || [], (v, how = {}) => {
+          room[f.k] = f.k === 'tv' ? v.slice(0, 1) : v;
+          if (how.rerender) { drawForm(); refresh(); } else { clearTimeout(formT); formT = setTimeout(refresh, 300); }
+        })))),
+        el('button', { class: 'btn small', type: 'button', style: { marginTop: '8px' }, onclick: async () => { if (await confirmBox('Remove the room? The furniture stays in the project.', 'Remove')) { delete p.room; p.items.forEach((i) => delete i.place); touch(); renderRoom(); } } }, 'Remove the room'));
+    };
+    drawForm();
+    body.replaceChildren(el('div', { class: 'pad' }, planBox, tools, checks, unplaced, el('h2', { class: 'section-title' }, 'The room'), form));
+    refresh();
   }
 
   function computeAll() {
@@ -317,18 +584,12 @@ function openProject(p) {
         c2.missingPrices ? el('p', { class: 'muted tiny' }, `${c2.missingPrices} item${c2.missingPrices === 1 ? ' has' : 's have'} no price yet. Type them in below; they are saved for every project.`) : null);
     };
     const priceInput = (line) => {
-      const inp = el('input', { class: 'price-in', type: 'number', min: 0, step: 'any', value: line.price || '', placeholder: '0', 'aria-label': `Price for ${line.label}` });
+      const inp = el('input', { class: 'price-in', type: 'number', min: 0, step: 'any', value: line.price ? Math.round(line.price) : '', placeholder: '0', 'aria-label': `Price for ${line.label}` });
       inp.addEventListener('change', () => {
         const v = Number(inp.value) || 0;
-        // write the price back to the library
-        const mat = layouts.find((l) => `${l.material.name} · ${finishById(l.color).name}` === line.label);
-        if (mat) mat.material.price = v;
-        const edge = lib.edges.find((e) => line.label.startsWith(e.name));
-        if (edge) edge.price = v;
-        const h = Object.values(lib.hardware).find((x) => x.name === line.label);
-        if (h) h.price = v;
-        if (mat) { const m2 = lib.materials.find((x) => x.id === mat.material.id); if (m2) m2.price = v; }
-        saveLib();
+        const [kind, id] = (line.key || '').split(':');
+        const target = kind === 'mat' ? lib.materials.find((m) => m.id === id) : kind === 'edge' ? lib.edges.find((e) => e.id === id) : kind === 'hw' ? lib.hardware[id] : null;
+        if (target) { target.price = v; target.priceHi = v; saveLib(); }
         renderCost();
       });
       return inp;
@@ -341,6 +602,8 @@ function openProject(p) {
         el('label', { class: 'field-block grow' }, 'Labour %', el('input', { type: 'number', value: p.labour ?? lib.settings.labour, oninput: (e) => { p.labour = Number(e.target.value) || 0; touch(); recalc(); } })),
         el('label', { class: 'field-block grow' }, 'Profit %', el('input', { type: 'number', value: p.profit ?? lib.settings.profit, oninput: (e) => { p.profit = Number(e.target.value) || 0; touch(); recalc(); } }))),
       totals,
+      el('div', { class: 'seg', style: { marginTop: '12px' } }, [['low', 'Lowest prices'], ['mid', 'Middle'], ['high', 'Highest prices']].map(([k, t]) => el('button', { type: 'button', 'aria-pressed': String((lib.settings.priceLevel || 'mid') === k), onclick: () => { lib.settings.priceLevel = k; saveLib(); renderCost(); } }, t))),
+      el('p', { class: 'muted tiny' }, 'Shops charge different prices: the range comes from Materials. Quote with “Highest” to stay safe.'),
       el('button', { class: 'btn primary wide', type: 'button', style: { marginTop: '12px' }, onclick: () => shareQuote(p, costs(p, lib, layouts, edges, hw)) }, '↗ Send a quote to the client'));
     recalc();
     body.replaceChildren(wrap);
@@ -352,7 +615,7 @@ function openProject(p) {
     tabsBar, body);
   const addItemPanelProxy = () => { show('items'); setTimeout(() => body.querySelector('.btn.primary.wide')?.click(), 30); };
   host.hidden = false;
-  show('items');
+  show(startTab);
   pushLayer(() => { if (viewer) viewer.destroy(); host.hidden = true; host.replaceChildren(); });
   host._refresh = () => show(current);
 }
@@ -426,7 +689,11 @@ async function openItem(p, item) {
       let out;
       try { out = buildItem(item, lib); } catch (e) { msgs.replaceChildren(el('div', { class: 'warn-box' }, 'These settings don’t work together: ' + e.message)); return; }
       size.textContent = `${L(out.size.w, false)} × ${L(out.size.h, false)} × ${L(out.size.d)}`;
+      const hasHinges = out.panels.some((x) => x.hinges && x.hinges.length);
       msgs.replaceChildren(
+        hasHinges || item.params.grade ? el('div', { class: 'row' },
+          hasHinges ? el('button', { class: 'btn small', type: 'button', onclick: () => hingeSheet(item, out) }, '🔩 How to fit the hinges') : null,
+          item.params.grade ? el('span', { class: 'muted tiny' }, `${GRADES[item.params.grade]?.name || ''}: ${GRADES[item.params.grade]?.note || ''}`) : null) : null,
         out.warnings.length ? el('div', { class: 'warn-box' }, el('b', {}, '⚠ Check'), el('ul', {}, out.warnings.map((w) => el('li', {}, w)))) : null,
         out.notes.length ? el('details', { class: 'note-box', open: firstBuild }, el('summary', {}, el('b', {}, 'Workshop notes')), el('ul', {}, out.notes.map((n) => el('li', {}, n)))) : null);
       const tmp = cutList([{ item: { ...item, qty: 1 }, out }], lib);
@@ -447,7 +714,9 @@ async function openItem(p, item) {
     } }, n))) : null);
   }
 
+  const openSecs = new Set();
   function renderForm() {
+    form.querySelectorAll('details').forEach((d) => { const k = d.dataset.sec; if (d.open) openSecs.add(k); else openSecs.delete(k); });
     const sections = [];
     for (const f of model.params) {
       if (!sections.includes(f.section || 'Settings')) sections.push(f.section || 'Settings');
@@ -455,8 +724,9 @@ async function openItem(p, item) {
     form.replaceChildren(...sections.map((sec, i) => {
       const fields = model.params.filter((f) => (f.section || 'Settings') === sec && (!f.when || f.when(item.params)));
       if (!fields.length) return null;
-      return el('details', { open: i === 0 }, el('summary', {}, sec), el('div', { class: 'fields' }, fields.map((f) => fieldRow(f, item.params[f.k], (v, how = {}) => {
+      return el('details', { open: openSecs.size ? openSecs.has(sec) : i === 0, 'data-sec': sec }, el('summary', {}, sec), el('div', { class: 'fields' }, fields.map((f) => fieldRow(f, item.params[f.k], (v, how = {}) => {
         item.params[f.k] = v;
+        if (how.sets) { Object.assign(item.params, structuredClone(how.sets)); toast(`${f.opts.find((o) => o[0] === v)?.[1] || v}: boards and hardware updated`); }
         if (how.rerender) renderForm();
         rebuild(how.live ? 250 : 0);
       }))));
@@ -470,6 +740,52 @@ async function openItem(p, item) {
   viewer = await makeViewer(box, { onPick: (pn) => showPick(info, pn) });
   firstBuild = true;
   rebuild();
+}
+
+/* hinge drawing + drilling guide for one design */
+function hingeSheet(item, out) {
+  const doors = out.panels.filter((x) => x.hinges && x.hinges.length);
+  const groups = new Map();
+  for (const d of doors) {
+    const k = `${d.door.hingeType}|${Math.round(d.box.w)}|${Math.round(d.box.h)}|${d.door.hinge}`;
+    if (!groups.has(k)) groups.set(k, { d, n: 0 });
+    groups.get(k).n++;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const S = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); n.append(...kids.flat().filter((x) => x != null)); return n; };
+  const drawing = (d) => {
+    const w = d.box.w;
+    const h = d.box.h;
+    const flapT = d.door.hinge === 'T';
+    const flapB = d.door.hinge === 'B';
+    const sc = 240 / Math.max(w, h);
+    const W = w * sc;
+    const H = h * sc;
+    const svg = S('svg', { viewBox: `-70 -30 ${W + 150} ${H + 70}`, class: 'hinge-svg' });
+    svg.append(S('rect', { x: 0, y: 0, width: W, height: H, fill: '#f5ede0', stroke: '#57534e', 'stroke-width': 1.5, rx: 2 }));
+    svg.append(S('text', { x: W / 2, y: -12, 'text-anchor': 'middle', 'font-size': 11, fill: '#57534e' }, `${L(w, false)} × ${L(h)} · seen from the back`));
+    for (const hp of d.hinges) {
+      let cx, cy;
+      if (flapT || flapB) { cx = hp * sc; cy = flapT ? 22.5 * sc : H - 22.5 * sc; }
+      else { cx = d.door.hinge === 'R' ? 22.5 * sc : W - 22.5 * sc; cy = hp * sc; } // seen from the back: left hinge appears on the right
+      svg.append(S('circle', { cx, cy, r: Math.max(5, 17.5 * sc), fill: '#fff', stroke: '#c2410c', 'stroke-width': 2 }));
+      if (flapT || flapB) svg.append(S('text', { x: cx, y: flapT ? cy + 18 : cy - 12, 'text-anchor': 'middle', 'font-size': 10, fill: '#c2410c' }, `${hp}`));
+      else svg.append(S('text', { x: d.door.hinge === 'R' ? -8 : W + 8, y: cy + 3.5, 'text-anchor': d.door.hinge === 'R' ? 'end' : 'start', 'font-size': 10, fill: '#c2410c' }, `${hp}`));
+    }
+    svg.append(S('text', { x: W / 2, y: H + 22, 'text-anchor': 'middle', 'font-size': 10, fill: '#57534e' }, `Ø35 cups · mm from the ${flapT || flapB ? 'left' : 'top'}`));
+    return svg;
+  };
+  const types = [...new Set(doors.map((d) => d.door.hingeType))];
+  const doorT = doors[0] ? Math.round(doors[0].box.d) : 18;
+  const kind = doors[0] ? matById(lib, doors[0].mat).kind : 'MDF';
+  sheet(`Hinges · ${item.name}`, [
+    el('p', { class: 'muted tiny' }, `${doors.length} door${doors.length > 1 ? 's' : ''}, ${doors.reduce((a, d) => a + d.hinges.length, 0)} hinges in total.`),
+    [...groups.values()].map(({ d, n }) => el('div', { class: 'card', style: { marginBottom: '10px' } },
+      el('b', {}, `${n} × ${HINGE_TYPES[d.door.hingeType]?.name || 'Hinge'}`), el('div', { class: 'muted tiny' }, d.note), drawing(d))),
+    types.map((t) => [el('h3', { class: 'section-title' }, `Fitting: ${HINGE_TYPES[t]?.name}`), el('p', { class: 'muted tiny' }, HINGE_TYPES[t]?.use), el('ol', { class: 'steps-list' }, hingeGuide(t, doorT, kind).map((x) => el('li', {}, x)))]),
+    el('h3', { class: 'section-title' }, 'Other hinge types you can choose'),
+    el('ul', { class: 'steps-list' }, Object.entries(HINGE_TYPES).filter(([k]) => !types.includes(k)).map(([, h]) => el('li', {}, el('b', {}, h.name), ` – ${h.use}`))),
+  ]);
 }
 
 function partsTableSimple(list) {
@@ -497,11 +813,15 @@ function fieldRow(f, value, onChange) {
     inp.addEventListener('change', () => { const v = read(); if (v !== null) { inp.value = f.len ? Math.round(fromMM(v, U()) * 100) / 100 : v; onChange(v, { rerender: !!f.rerender }); } });
     input = f.len ? el('div', { class: 'unit-wrap' }, inp, el('span', {}, U())) : inp;
   } else if (f.type === 'sel') {
-    input = el('select', { 'aria-label': f.label, onchange: (e) => onChange(e.target.value, { rerender: true }) }, f.opts.map(([v, t]) => el('option', { value: v, selected: String(value) === String(v) }, t)));
+    input = el('select', { 'aria-label': f.label, onchange: (e) => onChange(e.target.value, { rerender: true, sets: f.sets ? f.sets(e.target.value) : null }) }, f.opts.map(([v, t]) => el('option', { value: v, selected: String(value) === String(v) }, t)));
   } else if (f.type === 'bool') {
     input = el('input', { type: 'checkbox', class: 'switch', checked: !!value, 'aria-label': f.label, onchange: (e) => onChange(e.target.checked, { rerender: true }) });
   } else if (f.type === 'mat') {
-    input = el('select', { 'aria-label': f.label, onchange: (e) => onChange(e.target.value, { rerender: true }) }, lib.materials.map((m) => el('option', { value: m.id, selected: value === m.id }, m.name)));
+    const roles = Object.keys(ROLE_MATS.et);
+    const boards = lib.materials.filter((m) => inRegion(m) || m.id === value);
+    input = el('select', { 'aria-label': f.label, onchange: (e) => onChange(e.target.value, { rerender: true }) },
+      el('optgroup', { label: 'Automatic (follows Materials → default boards)' }, roles.map((r) => el('option', { value: '@' + r, selected: value === '@' + r }, `${ROLE_NAMES[r]}: ${matById(lib, '@' + r).name}`))),
+      el('optgroup', { label: region() === 'et' ? 'Boards in Ethiopia' : 'Standard boards' }, boards.map((m) => el('option', { value: m.id, selected: value === m.id }, `${m.name}${priceOf(m, lib) ? ` · ${Math.round(priceOf(m, lib)).toLocaleString()} ${lib.settings.currency}` : ''}`))));
   } else if (f.type === 'color') {
     const box = el('div', { class: 'swatches', role: 'group', 'aria-label': f.label });
     for (const c of FINISHES) box.append(el('button', { type: 'button', title: c.name, 'aria-label': c.name, 'aria-pressed': String(value === c.id), style: { background: c.hex }, onclick: (e) => { box.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); onChange(c.id); } }));
@@ -591,23 +911,34 @@ function printLabels(p, list) {
 function renderMaterials() {
   const body = $('#materials-body');
   const cur = lib.settings.currency;
-  const num = (obj, key, attrs = {}) => el('input', { class: 'price-in', type: 'number', step: 'any', value: obj[key] ?? '', ...attrs, onchange: (e) => { obj[key] = Number(e.target.value) || 0; saveLib(); } });
+  const num = (obj, key, attrs = {}) => el('input', { class: 'price-in', type: 'number', step: 'any', value: obj[key] ?? '', ...attrs, onchange: (e) => { obj[key] = Number(e.target.value) || 0; if (key === 'price' && (!obj.priceHi || obj.priceHi < obj.price)) obj.priceHi = obj.price; saveLib(); } });
+  const rg = region();
+  const roles = lib.roles[rg] || {};
+  const boards = lib.materials.filter(inRegion);
   body.replaceChildren(
-    el('p', { class: 'muted' }, `Prices are saved on this phone and used for every project's cost (${cur}). Sheet sizes are used for cutting.`),
+    el('div', { class: 'seg' },
+      el('button', { type: 'button', 'aria-pressed': String(rg === 'et'), onclick: () => { lib.settings.region = 'et'; saveLib(); renderMaterials(); toast('Using boards from the Ethiopian market'); } }, '🇪🇹 Ethiopia market'),
+      el('button', { type: 'button', 'aria-pressed': String(rg === 'std'), onclick: () => { lib.settings.region = 'std'; saveLib(); renderMaterials(); toast('Using the standard (international) boards'); } }, 'Standard boards')),
+    el('p', { class: 'muted' }, rg === 'et'
+      ? `Boards you can buy in Ethiopia, priced in ${cur}. Backs and drawer bottoms use 3 mm MDF (no HDF). Prices are a range (low – high) because shops differ.`
+      : 'International standard boards (MDF, melamine chipboard, plywood, HDF backs). Type your prices.'),
+    el('h2', { class: 'section-title' }, 'Default board for each job'),
+    el('p', { class: 'muted tiny' }, 'Designs set to “Automatic” use these. Change one here and every design follows.'),
+    el('div', { class: 'fields card' }, Object.keys(ROLE_MATS.et).map((r) => el('div', { class: 'field' }, el('span', {}, ROLE_NAMES[r]),
+      el('select', { onchange: (e) => { lib.roles[rg] = { ...roles, [r]: e.target.value }; saveLib(); toast('Saved'); } }, boards.map((m) => el('option', { value: m.id, selected: (roles[r] || ROLE_MATS[rg][r]) === m.id }, m.name)))))),
     el('h2', { class: 'section-title' }, 'Boards'),
-    el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Board', 'Thick', 'Sheet L', 'Sheet W', 'Trim', `Price / sheet`, 'Grain', ''].map((h) => el('th', {}, h)))),
-      el('tbody', {}, lib.materials.map((m) => el('tr', {},
-        el('td', { class: 'name' }, el('input', { value: m.name, style: { width: '170px', padding: '6px 8px', border: '1px solid var(--line)', borderRadius: '8px' }, onchange: (e) => { m.name = e.target.value; saveLib(); } })),
-        el('td', {}, num(m, 'T', { style: { width: '64px' } })), el('td', {}, num(m, 'sheetL', { style: { width: '80px' } })), el('td', {}, num(m, 'sheetW', { style: { width: '80px' } })),
-        el('td', {}, el('input', { class: 'price-in', type: 'number', style: { width: '64px' }, value: m.trim ?? '', placeholder: String(lib.settings.trim), onchange: (e) => { m.trim = e.target.value === '' ? undefined : Number(e.target.value); saveLib(); } })),
-        el('td', {}, num(m, 'price')),
+    el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Board', 'Thick', 'Sheet L', 'Sheet W', `Low ${cur}`, `High ${cur}`, 'Grain', ''].map((h) => el('th', {}, h)))),
+      el('tbody', {}, boards.map((m) => el('tr', {},
+        el('td', { class: 'name' }, el('input', { value: m.name, style: { width: '170px', padding: '6px 8px', border: '1px solid var(--line)', borderRadius: '8px' }, onchange: (e) => { m.name = e.target.value; saveLib(); } }), m.note ? el('div', { class: 'muted tiny' }, m.note) : null),
+        el('td', {}, num(m, 'T', { style: { width: '58px' } })), el('td', {}, num(m, 'sheetL', { style: { width: '74px' } })), el('td', {}, num(m, 'sheetW', { style: { width: '74px' } })),
+        el('td', {}, num(m, 'price', { style: { width: '84px' } })), el('td', {}, num(m, 'priceHi', { style: { width: '84px' } })),
         el('td', {}, el('input', { type: 'checkbox', class: 'switch', checked: !!m.grain, 'aria-label': 'Has grain', onchange: (e) => { m.grain = e.target.checked; saveLib(); } })),
         el('td', {}, DEFAULT_MATERIALS.some((d) => d.id === m.id) ? '' : el('button', { class: 'btn small', type: 'button', onclick: () => { lib.materials = lib.materials.filter((x) => x !== m); saveLib(); renderMaterials(); } }, 'Delete'))))))),
-    el('button', { class: 'btn small', type: 'button', style: { marginTop: '8px' }, onclick: () => { lib.materials.push({ id: 'm' + uid(), name: 'New board', kind: 'MDF', T: 18, sheetL: 2440, sheetW: 1220, price: 0, grain: false }); saveLib(); renderMaterials(); } }, '+ Add a board'),
+    el('button', { class: 'btn small', type: 'button', style: { marginTop: '8px' }, onclick: () => { lib.materials.push({ id: 'm' + uid(), name: 'New board', kind: 'MDF', T: 18, sheetL: 2440, sheetW: 1220, price: 0, priceHi: 0, grain: false, region: rg }); saveLib(); renderMaterials(); } }, '+ Add a board'),
     el('h2', { class: 'section-title' }, 'Edge banding (per metre)'),
-    el('div', { class: 'table-wrap' }, el('table', {}, el('tbody', {}, lib.edges.map((e) => el('tr', {}, el('td', { class: 'name' }, e.name), el('td', { class: 'num' }, num(e, 'price'))))))),
-    el('h2', { class: 'section-title' }, 'Hardware & other'),
-    el('div', { class: 'table-wrap' }, el('table', {}, el('tbody', {}, Object.values(lib.hardware).map((h) => el('tr', {}, el('td', { class: 'name' }, h.name), el('td', {}, `per ${h.unit === 'pcs' ? 'piece' : h.unit}`), el('td', { class: 'num' }, num(h, 'price'))))))));
+    el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Edge band', 'Low', 'High'].map((h) => el('th', {}, h)))), el('tbody', {}, lib.edges.map((e) => el('tr', {}, el('td', { class: 'name' }, e.name), el('td', { class: 'num' }, num(e, 'price', { style: { width: '84px' } })), el('td', { class: 'num' }, num(e, 'priceHi', { style: { width: '84px' } }))))))),
+    el('h2', { class: 'section-title' }, 'Hardware, steel & upholstery'),
+    el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Item', 'Per', 'Low', 'High'].map((h) => el('th', {}, h)))), el('tbody', {}, Object.values(lib.hardware).map((h) => el('tr', {}, el('td', { class: 'name' }, h.name), el('td', {}, h.unit === 'pcs' ? 'piece' : h.unit), el('td', { class: 'num' }, num(h, 'price', { style: { width: '84px' } })), el('td', { class: 'num' }, num(h, 'priceHi', { style: { width: '84px' } }))))))));
 }
 
 /* ================================================================ settings */
@@ -628,11 +959,13 @@ function renderSettings() {
     el('details', { open: true }, el('summary', {}, 'Business'), el('div', { class: 'fields' },
       row('Workshop name', el('input', { type: 'text', value: s.shop, onchange: (e) => { s.shop = e.target.value; saveLib(); } }), 'Shown on cut lists, labels and quotes.'),
       row('Currency', el('input', { type: 'text', value: s.currency, onchange: (e) => { s.currency = e.target.value || 'ETB'; saveLib(); } })),
+      row('Boards', selI('region', [['et', 'Ethiopia market'], ['std', 'Standard (international)']]), 'Which set of boards and prices designs use.'),
+      row('Prices for quotes', selI('priceLevel', [['low', 'Lowest of the range'], ['mid', 'Middle of the range'], ['high', 'Highest of the range']])),
       row('Labour (% of materials)', n('labour')),
       row('Profit (%)', n('profit')))),
     el('details', {}, el('summary', {}, 'Back up or move to another phone'), el('div', { class: 'fields' },
       el('p', { class: 'muted tiny' }, 'Copy this text and keep it safe, or paste a backup and tap Import.'),
-      (() => { const ta = el('textarea', { rows: 6, style: { width: '100%', fontFamily: 'monospace', fontSize: '.75rem', padding: '8px', border: '1px solid var(--line)', borderRadius: '10px' } }, JSON.stringify({ projects, library: { materials: lib.materials, edges: lib.edges, hardware: lib.hardware, settings: lib.settings } }));
+      (() => { const ta = el('textarea', { rows: 6, style: { width: '100%', fontFamily: 'monospace', fontSize: '.75rem', padding: '8px', border: '1px solid var(--line)', borderRadius: '10px' } }, JSON.stringify({ projects, library: { materials: lib.materials, edges: lib.edges, hardware: lib.hardware, settings: lib.settings, roles: lib.roles } }));
         return [ta, el('div', { class: 'row' },
           el('button', { class: 'btn small', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(ta.value); toast('Copied'); } catch { ta.select(); } } }, 'Copy'),
           el('button', { class: 'btn small', type: 'button', onclick: () => { try { const d = JSON.parse(ta.value); if (Array.isArray(d.projects)) { const ids = new Set(projects.map((x) => x.id)); for (const pr of d.projects) if (!ids.has(pr.id)) projects.push(pr); saveProjects(); } if (d.library) { saveLibrary(d.library); lib = loadLibrary(); } toast('Imported'); renderSettings(); } catch { toast('That isn’t an Anatsi backup.'); } } }, 'Import'))]; })()))),

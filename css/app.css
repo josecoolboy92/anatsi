@@ -191,3 +191,19 @@ label.field-block input, label.field-block select, label.field-block textarea { 
   #print .label b { font-size: 14pt; }
   #print .page-break { page-break-before: always; }
 }
+
+/* room planner */
+.plan-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px; touch-action: none; }
+.plan { width: 100%; height: auto; display: block; max-height: 62dvh; font-family: inherit; }
+.plan-item { cursor: grab; }
+.plan-tools { display: grid; gap: 8px; margin: 10px 0; }
+.plan-tools .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.checks li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 8px 10px; border-radius: 10px; font-size: .9rem; background: var(--panel); border: 1px solid var(--line); }
+.checks li.warn { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+.checks li.ok { color: #166534; }
+.checks li.tip { background: #f0f9ff; border-color: #bae6fd; color: #075985; }
+/* hinge guide */
+.hinge-svg { width: 100%; max-width: 360px; height: auto; display: block; margin: 8px auto 0; }
+.steps-list { padding-left: 20px; margin: 6px 0 12px; display: grid; gap: 6px; font-size: .92rem; }
+.note-box li { white-space: pre-line; }
