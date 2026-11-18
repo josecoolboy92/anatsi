@@ -131,15 +131,34 @@ export class Viewer {
       g.position.set(offset[0] * S, offset[1] * S, offset[2] * S);
       g.rotation.y = (rot * Math.PI) / 180;
       this.root.add(g);
+      // parts can sit in their own turned frame (curved units): { x, z, ry }
+      const frames = new Map();
+      const frameFor = (f) => {
+        if (!f) return g;
+        const k = `${f.x}|${f.z}|${f.ry}`;
+        if (!frames.has(k)) { const fg = new THREE.Group(); fg.position.set(f.x * S, 0, f.z * S); fg.rotation.y = ((f.ry || 0) * Math.PI) / 180; g.add(fg); frames.set(k, fg); }
+        return frames.get(k);
+      };
       for (const p of out.panels) {
         const b = p.box;
-        const geo = new THREE.BoxGeometry(Math.max(1, b.w) * S, Math.max(1, b.h) * S, Math.max(1, b.d) * S);
+        let geo;
+        if (p.shape && p.shape.pts) {
+          // curved part: outline in plan (x, z), extruded upward by its height
+          const sh = new THREE.Shape(p.shape.pts.map(([x, z]) => new THREE.Vector2(x * S, -z * S)));
+          geo = new THREE.ExtrudeGeometry(sh, { depth: Math.max(1, b.h) * S, bevelEnabled: false, curveSegments: 4 });
+          geo.rotateX(-Math.PI / 2);
+          geo.computeBoundingBox();
+          const c = geo.boundingBox.getCenter(new THREE.Vector3());
+          geo.translate(-c.x, -c.y, -c.z);
+          p._shapeCenter = c;
+        } else geo = new THREE.BoxGeometry(Math.max(1, b.w) * S, Math.max(1, b.h) * S, Math.max(1, b.d) * S);
         const mesh = new THREE.Mesh(geo, matFor(p.color, p.role));
         const solid = p.role !== 'wall';
         mesh.castShadow = solid && p.role !== 'floor';
         mesh.receiveShadow = true;
         if (solid && p.role !== 'floor') mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat));
-        const center = new THREE.Vector3((b.x + b.w / 2) * S, (b.y + b.h / 2) * S, (b.z + b.d / 2) * S);
+        const center = p._shapeCenter ? new THREE.Vector3(p._shapeCenter.x, b.y * S + p._shapeCenter.y, p._shapeCenter.z) : new THREE.Vector3((b.x + b.w / 2) * S, (b.y + b.h / 2) * S, (b.z + b.d / 2) * S);
+        delete p._shapeCenter;
         const holder = new THREE.Group();
         holder.userData = { panel: p, home: center.clone(), explode: p.explode || [0, 0, 0], door: p.door };
         const hingeSide = p.door && !p.door.drawer ? p.door.hinge || 'L' : null;
@@ -176,7 +195,7 @@ export class Viewer {
         }
         holder.add(mesh);
         mesh.userData.holder = holder;
-        g.add(holder);
+        frameFor(p.frame).add(holder);
         this.holders.push(holder);
         if (p.role !== 'wall' && p.role !== 'floor') this.meshes.push(mesh);
       }

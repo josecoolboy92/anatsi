@@ -10,7 +10,7 @@ const ROT = { A: 0, B: 270, C: 180, D: 90 }; // rotation that puts an item's bac
 
 export function defaultRoom() {
   return {
-    L: 4000, W: 3600, H: 2700,
+    L: 4000, W: 3600, H: 2700, curve: { wall: 'C', depth: 0 },
     doors: [{ type: 'door', wall: 'C', pos: 600, w: 900, h: 2100, y: 0, swing: 'L' }],
     sockets: [],
     tv: [],
@@ -29,15 +29,24 @@ export function wallPoint(room, wall, pos, d = 0) {
 /* ---------------------------------------------------------------- item geometry */
 // plan footprint of a built item in its own coordinates
 export function footprint(out) {
+  if (out.footprint) return out.footprint;
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, h = 0;
-  const addBox = (b) => {
-    x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x + b.w); z0 = Math.min(z0, b.z); z1 = Math.max(z1, b.z + b.d); h = Math.max(h, b.y + b.h);
+  const addPt = (x, z) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); };
+  const addBox = (b, f) => {
+    h = Math.max(h, b.y + b.h);
+    const pts = [[b.x, b.z], [b.x + b.w, b.z], [b.x + b.w, b.z + b.d], [b.x, b.z + b.d]];
+    for (const [x, z] of pts) { if (f) { const q = frameXZ(f, x, z); addPt(q.x, q.z); } else addPt(x, z); }
   };
-  for (const p of out.panels) addBox(p.box);
+  for (const p of out.panels) addBox(p.box, p.frame);
   for (const b of out.bars || []) addBox(b);
   for (const m of out.marks || []) addBox(m);
   if (!isFinite(x0)) return { x0: 0, x1: 1, z0: 0, z1: 1, h: 0 };
   return { x0, x1, z0, z1, h };
+}
+// a point in a part's own turned frame → the furniture's coordinates
+export function frameXZ(f, x, z) {
+  const t = ((f.ry || 0) * Math.PI) / 180;
+  return { x: f.x + x * Math.cos(t) + z * Math.sin(t), z: f.z - x * Math.sin(t) + z * Math.cos(t) };
 }
 const rad = (deg) => (deg * Math.PI) / 180;
 export function toRoom(place, lx, lz) {
@@ -115,6 +124,8 @@ function windowZones(room) {
 // floor that must stay free around an item (walkways, door swing)
 function keepClear(model, out) {
   if (model === 'bed') return { front: 600, sides: out && out.bed && out.bed.totalW <= 1100 ? 0 : 450 };
+  if (model === 'bunk') return { front: 700, sides: 0 };
+  if (model === 'curved') return { front: 500, sides: 0 };
   if (['cupboard', 'combo', 'kitchenTall'].includes(model)) return { front: 800, sides: 0 };
   if (/kitchen/.test(model)) return { front: 1000, sides: 0 };
   return { front: 400, sides: 0 };
@@ -131,68 +142,87 @@ function zonesFor(fp, place, need) {
 }
 const inside = (room, b) => b.x0 > -2 && b.z0 > -2 && b.x1 < room.L + 2 && b.z1 < room.W + 2;
 
-// entries: [{ item, out, fp }]; places those without item.place (or all when force)
+// entries: [{ item, out, fp }]; places those without item.place (or all when force).
+// Tries several positions for the first (biggest) piece and keeps the arrangement with the best walkways.
 export function autoArrange(room, entries, force = false) {
-  const placed = [];
-  const zones = [];
-  for (const e of entries.filter((x) => x.item.place && !force)) {
-    placed.push(aabb(e.fp, e.item.place));
-    zones.push(...zonesFor(e.fp, e.item.place, keepClear(e.item.model, e.out)));
-  }
+  const fixed = entries.filter((x) => x.item.place && !force);
   const doors = doorZones(room);
   const wins = [...windowZones(room), ...tvZones(room)];
   const tvWall = (room.tv || [])[0] && room.tv[0].wall;
   const opposite = { A: 'C', C: 'A', B: 'D', D: 'B' };
-  const order = { bed: 0, combo: 1, cupboard: 1, kitchenRun: 2, kitchenTall: 2, kitchenBase: 3, kitchenWall: 3, nightstand: 4, custom: 5 };
-  const todo = entries.filter((e) => force || !e.item.place).sort((a, b) => (order[a.item.model] ?? 5) - (order[b.item.model] ?? 5));
-  const results = [];
-  for (const e of todo) {
+  const order = { bed: 0, bunk: 0, curved: 1, combo: 1, cupboard: 1, kitchenRun: 2, kitchenTall: 2, kitchenBase: 3, kitchenWall: 3, nightstand: 4, custom: 5 };
+  const todo = entries.filter((e) => force || !e.item.place).sort((a, b) => (order[a.item.model] ?? 5) - (order[b.item.model] ?? 5) || alongWidth(b.fp) - alongWidth(a.fp));
+  // every possible spot for one piece, best first
+  const candidates = (e, placed, zones) => {
     const need = keepClear(e.item.model, e.out);
-    let best = null;
-    for (const strict of [true, false]) {
-      for (const wall of WALLS) {
-        const len = wallLen(room, wall);
-        const wdt = alongWidth(e.fp);
-        if (wdt > len) continue;
-        for (let c = wdt / 2; c <= len - wdt / 2 + 1; c += 50) {
-          const place = placeAgainst(room, e.fp, wall, c);
-          const box = aabb(e.fp, place);
-          if (!inside(room, box)) continue;
-          if (placed.some((p) => overlap(box, p))) continue;
-          if (doors.some((d) => overlap(box, d))) continue;
-          if (wins.some((w) => overlap(box, w) && e.fp.h > w.sill)) continue;
-          const myZones = zonesFor(e.fp, place, need);
-          if (strict) {
-            if (zones.some((zn) => overlap(box, zn))) continue;
-            if (myZones.some((zn) => !inside(room, zn) || placed.some((p) => overlap(zn, p)))) continue;
-          }
-          let score = strict ? 0 : 5000 + myZones.filter((zn) => placed.some((p) => overlap(zn, p)) || zones.some((q) => overlap(box, q))).length * 1000;
-          const fromEnds = Math.min(c - wdt / 2, len - c - wdt / 2);
-          if (e.item.model === 'bed') {
-            score += Math.abs(c - len / 2);
-            if (doors.some((d) => d.door.wall === wall)) score += 2000;
-            if (wins.some((w) => w.win.wall === wall)) score += 600;
-            if (tvWall && opposite[wall] === tvWall) score -= 1500;
-            if (tvWall === wall) score += 3000;
-          } else if (/kitchen/.test(e.item.model)) {
-            score += fromEnds - len * 2;
-          } else {
-            score += fromEnds;
-            if (tvWall === wall) score += 800;
-          }
-          if (!best || score < best.score) best = { score, place, box, myZones };
+    const list = [];
+    for (const wall of WALLS) {
+      const len = wallLen(room, wall);
+      const wdt = alongWidth(e.fp);
+      if (wdt > len) continue;
+      const curvedWall = room.curve && room.curve.depth > 0 && room.curve.wall === wall;
+      if ((e.item.model === 'curved') !== !!curvedWall) continue;
+      for (let c = wdt / 2; c <= len - wdt / 2 + 1; c += 50) {
+        const place = placeAgainst(room, e.fp, wall, c);
+        const box = aabb(e.fp, place);
+        if (!inside(room, box)) continue;
+        if (placed.some((p) => overlap(box, p))) continue;
+        if (doors.some((d) => overlap(box, d))) continue;
+        if (wins.some((w) => overlap(box, w) && e.fp.h > w.sill)) continue;
+        const myZones = zonesFor(e.fp, place, need);
+        const clash = zones.filter((zn) => overlap(box, zn)).length + myZones.filter((zn) => !inside(room, zn) || placed.some((p) => overlap(zn, p))).length;
+        let score = clash * 3000;
+        const fromEnds = Math.min(c - wdt / 2, len - c - wdt / 2);
+        if (e.item.model === 'bed' || e.item.model === 'bunk') {
+          score += Math.abs(c - len / 2) * (e.item.model === 'bunk' ? 0 : 1);
+          if (e.item.model === 'bunk') score += fromEnds;
+          if (doors.some((d) => d.door.wall === wall)) score += 2000;
+          if (wins.some((w) => w.win.wall === wall)) score += 600;
+          if (tvWall && opposite[wall] === tvWall) score -= 1500;
+          if (tvWall === wall) score += 3000;
+        } else if (/kitchen/.test(e.item.model)) {
+          score += fromEnds - len * 2;
+        } else if (e.item.model === 'curved') {
+          score += Math.abs(c - len / 2);
+        } else {
+          score += fromEnds;
+          if (tvWall === wall) score += 800;
         }
+        list.push({ score, clash, place, box, myZones });
       }
-      if (best) break;
     }
-    if (best) {
-      e.item.place = best.place;
+    return list.sort((p, q) => p.score - q.score);
+  };
+  const run = (firstPick) => {
+    const placed = fixed.map((e) => aabb(e.fp, e.item.place));
+    const zones = fixed.flatMap((e) => zonesFor(e.fp, e.item.place, keepClear(e.item.model, e.out)));
+    const res = [];
+    let cost = 0;
+    todo.forEach((e, i) => {
+      const best = i === 0 && firstPick ? firstPick : candidates(e, placed, zones)[0];
+      if (!best) { res.push({ e, ok: false }); cost += 50000; return; }
       placed.push(best.box);
       zones.push(...best.myZones);
-      results.push({ item: e.item, ok: true, tight: best.score >= 5000 });
-    } else results.push({ item: e.item, ok: false });
+      res.push({ e, ok: true, place: best.place, tight: best.clash > 0 });
+      cost += best.score;
+    });
+    return { res, cost };
+  };
+  let best = run(null);
+  if (todo.length > 1) {
+    const first = candidates(todo[0], fixed.map((e) => aabb(e.fp, e.item.place)), []);
+    // a spread of different spots: the best few on each wall
+    const tried = new Set();
+    for (const c of first) {
+      const key = `${c.place.rot}|${Math.round((c.place.x + c.place.z) / 300)}`;
+      if (tried.has(key) || tried.size > 24) continue;
+      tried.add(key);
+      const r = run(c);
+      if (r.cost < best.cost) best = r;
+    }
   }
-  return results;
+  for (const r of best.res) if (r.ok) r.e.item.place = r.place;
+  return best.res.map((r) => ({ item: r.e.item, ok: r.ok, tight: r.tight }));
 }
 
 /* ---------------------------------------------------------------- free spans along a wall (for "design for this wall") */
@@ -279,6 +309,8 @@ export function checkRoom(room, entries) {
         else add('ok', `${fmt(v)} walkway beside ${e.item.name} on ${side}.`);
       }
       if (front < 600) add('warn', `Only ${fmt(front)} at the foot of ${e.item.name}: keep 600 mm or more.`);
+    } else if (e.item.model === 'cupboard' && e.item.params.style === 'open') {
+      if (front < 450) add('warn', `Only ${fmt(front)} in front of ${e.item.name}: leave 450 mm or more to reach the shelves.`);
     } else if (['cupboard', 'combo', 'kitchenTall'].includes(e.item.model)) {
       if (front < 750) add('warn', `Only ${fmt(front)} in front of ${e.item.name}: doors need about 600 mm to open plus room to stand (750–900 mm).`);
       else add('ok', `${fmt(front)} free in front of ${e.item.name}.`);
@@ -388,6 +420,30 @@ export function roomOut(room) {
   P('Wall D', 'wall', '#efe9df', { x: -t, y: 0, z: 0, w: t, h: room.H, d: room.W });
   P('Wall B', 'wall', '#efe9df', { x: room.L, y: 0, z: 0, w: t, h: room.H, d: room.W });
   P('Wall C', 'wall', '#efe9df', { x: -t, y: 0, z: room.W, w: room.L + 2 * t, h: room.H, d: t });
+  const cv = room.curve;
+  if (cv && cv.depth > 0) {
+    // replace the straight wall with short wall pieces along the curve, and add the floor of the bay
+    const idx = out.panels.findIndex((x) => x.name === `Wall ${cv.wall}`);
+    if (idx >= 0) out.panels.splice(idx, 1);
+    const c = wallLen(room, cv.wall);
+    const s = Math.min(cv.depth, c / 2);
+    const R = (c * c / 4 + s * s) / (2 * s);
+    const th = 2 * Math.asin(Math.min(1, c / (2 * R)));
+    const n = 16;
+    const pts = [];
+    for (let k = 0; k <= n; k++) { const a = -th / 2 + (k * th) / n; pts.push([c / 2 + R * Math.sin(a), (R - s) - R * Math.cos(a)]); }
+    // local curve coordinates: x along the wall, z negative = outside the room → room coordinates
+    const toRoomXZ = ([u, v]) => { const q = wallPoint(room, cv.wall, u, v); return [q.x, q.z]; }; // v < 0 = outside the room
+    const rp = pts.map(toRoomXZ);
+    out.panels.push({ id: 'bay', name: 'Floor (curve)', role: 'floor', color: '#d8cbb3', mat: '', L: 0, W: 0, box: { x: 0, y: -10, z: 0, w: 1, h: 10, d: 1 }, shape: { pts: rp } });
+    for (let k = 0; k < n; k++) {
+      const [x1, z1] = rp[k];
+      const [x2, z2] = rp[k + 1];
+      const len = Math.hypot(x2 - x1, z2 - z1);
+      const ry = (Math.atan2(-(z2 - z1), x2 - x1) * 180) / Math.PI;
+      out.panels.push({ id: 'cw' + k, name: 'Curved wall', role: 'wall', color: '#efe9df', mat: '', L: 0, W: 0, box: { x: 0, y: 0, z: -25, w: len + 4, h: room.H, d: 50 }, frame: { x: x1, z: z1, ry } });
+    }
+  }
   const onWall = (wall, pos, w, y, h, depth, color, extra = {}) => {
     const a = wallPoint(room, wall, pos, 0);
     const b = wallPoint(room, wall, pos + w, depth);

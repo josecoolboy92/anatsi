@@ -1,9 +1,10 @@
 // Anatsi — furniture designer + cutting list for carpenters. No ads, no paywall, works offline.
 import { $, el, toast, sheet, confirmBox, downloadBlob, storage, uid } from './util.js';
 import { loadLibrary, saveLibrary, FINISHES, finishById, fmtLen, toMM, fromMM, matById, DEFAULT_MATERIALS, ROLE_MATS, ROLE_NAMES, priceOf, HINGE_TYPES, hingeGuide, GRADES } from './core.js';
-import { defaultRoom, WALLS, WALL_NAMES, footprint, aabb, corners, placeAgainst, autoArrange, checkRoom, syncCutouts, roomOut, freeSpans, wallLen, wallPoint, backWall } from './room.js';
+import { defaultRoom, WALLS, WALL_NAMES, footprint, aabb, corners, placeAgainst, autoArrange, checkRoom, syncCutouts, roomOut, freeSpans, wallLen, wallPoint, backWall, frameXZ, toRoom } from './room.js';
 import { MODELS, defaults, buildItem } from './models.js';
 import { GUIDE } from './guide.js';
+import { startI18n, getLang, setLang, LANGS } from './i18n.js';
 import { buildProject, cutList, edgeBanding, hardware, layoutSheets, costs } from './cut.js';
 import { sheetSVG, ROLE_COLORS } from './diagram.js';
 
@@ -74,44 +75,94 @@ function newItem(model, extra = {}) {
   return { id: uid(), model, name: extra.name || m.name, qty: extra.qty || 1, params: { ...defaults(m), ...(extra.params || {}) } };
 }
 
-// A bedroom set from the pieces the user ticked
-function roomSet(sel, bed) {
-  const items = [];
-  if (sel.bed) items.push(newItem('bed', { name: bed.name, params: { ...MODELS.bed.presets[bed.preset], ...(sel.ns ? {} : { ns: 'none' }) } }));
-  else if (sel.ns) items.push(newItem('nightstand', { name: 'Nightstand', qty: 2 }));
-  const order = ['w', 'd', 'c'].filter((k) => sel[{ w: 'ward', d: 'desk', c: 'coat' }[k]]).join('');
-  if (order === 'w') items.push(newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets[bed.wardrobe || 'Hotel wardrobe 900'] }));
-  else if (order) {
-    const space = (sel.ward ? 1200 : 0) + (sel.desk ? 1000 : 0) + (sel.coat ? 500 : 0);
-    const names = { w: 'Wardrobe', d: 'Desk', c: 'Coat rack' };
-    items.push(newItem('combo', { name: order.split('').map((k) => names[k]).join(' + '), params: { order, space } }));
-  }
-  return items;
-}
+const bedItem = (name, preset, extra = {}) => newItem('bed', { name, params: { ...MODELS.bed.presets[preset], ...extra } });
+const cupItem = (name, preset, extra = {}) => newItem('cupboard', { name, params: { ...MODELS.cupboard.presets[preset], ...extra } });
+const comboItem = (name, order, extra = {}) => newItem('combo', { name, params: { order, ...extra } });
+const doorC = (pos = 600) => [{ type: 'door', wall: 'C', pos, w: 900, h: 2100, y: 0, swing: 'L' }];
+
+// Room designs: each has a room size and the pieces you can tick
+const ROOM_TYPES = [
+  { id: 'master', label: 'Master bedroom', icon: '👑', sub: 'King bed, big wardrobe, dressing table',
+    room: { L: 4800, W: 4200, H: 2800, doors: doorC(700), tv: [{ wall: 'C', pos: 2700, y: 1100, size: 55 }] },
+    pick: [['bed', 'King bed (padded headboard)', true], ['ns', 'Nightstands', true], ['ward', 'Large wardrobe 3.0 m', true], ['dress', 'Dressing table with mirror', true], ['tv', 'TV unit', false], ['island', 'Dressing island (drawers)', false]],
+    make: (x) => [
+      x.bed && bedItem('King bed', 'Master bedroom king (1800×2000)', x.ns ? {} : { ns: 'none' }),
+      !x.bed && x.ns && newItem('nightstand', { name: 'Nightstand', qty: 2 }),
+      x.ward && cupItem('Large wardrobe', 'Large wardrobe 3.0 m (big house)'),
+      x.dress && comboItem('Dressing table', 'd', { space: 1200, hutch: 'none', pedestal: true, deskH: 750, deskD: 450 }),
+      x.tv && cupItem('TV unit', 'TV unit 1800 (low)'),
+      x.island && cupItem('Dressing island', 'Dressing island (drawers)')] },
+  { id: 'kids', label: 'Kids bedroom', icon: '🧸', sub: 'Safe single or loft bed, study desk, toys',
+    room: { L: 3400, W: 3200, H: 2700, doors: doorC(500), tv: [] },
+    pick: [['bed', 'Single bed with guard rail', true], ['loft', 'Loft bed with desk (instead)', false], ['desk', 'Study desk', true], ['ward', 'Kids wardrobe (rounded ends)', true], ['toys', 'Low toy shelves', true]],
+    make: (x) => [
+      x.loft ? newItem('bunk', { name: 'Loft bed with desk', params: MODELS.bunk.presets['Loft bed with desk'] }) : x.bed && bedItem('Kids bed', 'Kids single with guard rail'),
+      x.desk && !x.loft && comboItem('Study desk', 'd', { space: 1000, hutch: 'shelves', pedestal: false, deskD: 500, height: 2000 }),
+      x.ward && cupItem('Kids wardrobe', 'Kids wardrobe (rounded ends)'),
+      x.toys && cupItem('Toy shelves', 'Low toy shelves (kids)')] },
+  { id: 'student', label: 'Student / teen room', icon: '🎒', sub: 'Small double, wardrobe + desk wall',
+    room: { L: 3800, W: 3600, H: 2700, doors: doorC(500), tv: [] },
+    pick: [['bed', 'Bed 1200 or 1400', true], ['combo', 'Wardrobe + desk (+ coat rack)', true], ['shelves', 'Bookcase', false]],
+    make: (x) => [x.bed && bedItem('Bed', 'Home double (1400×1900)', { size: 'small', ns: 'right' }), x.combo && comboItem('Wardrobe + desk', 'wdc', { space: 2400 }), x.shelves && cupItem('Bookcase', 'Bookcase open')] },
+  { id: 'guest', label: 'Guest room', icon: '🛎️', sub: 'For guest houses and rentals: queen or joinable twins',
+    room: { L: 4000, W: 3600, H: 2700, doors: doorC(500), tv: [{ wall: 'C', pos: 2400, y: 1100, size: 50 }] },
+    pick: [['queen', 'Queen bed', true], ['twins', 'Joinable twins (instead of queen)', false], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', true], ['desk', 'Desk', true], ['coat', 'Luggage + coat rack', false]],
+    make: (x) => {
+      const bed = x.twins ? bedItem('Twin beds', 'Joinable twins → king (2× 900×2000)', x.ns ? {} : { ns: 'none' }) : x.queen ? bedItem('Queen bed', 'Guest room queen (1600×2000)', x.ns ? {} : { ns: 'none' }) : null;
+      const order = ['w', 'd', 'c'].filter((k) => x[{ w: 'ward', d: 'desk', c: 'coat' }[k]]).join('');
+      return [bed, order === 'w' ? cupItem('Wardrobe', 'Compact wardrobe 900') : order && comboItem('Wardrobe + desk', order, { space: (x.ward ? 1100 : 0) + (x.desk ? 1000 : 0) + (x.coat ? 500 : 0) })];
+    } },
+  { id: 'dorm', label: 'Dormitory', icon: '🏫', sub: 'Bunk beds, lockers, study desks',
+    room: { L: 6000, W: 4500, H: 2900, doors: doorC(600), tv: [] },
+    pick: [['bunk', 'Bunk beds (2 levels) × 2', true], ['triple', 'Triple bunks (instead)', false], ['lockers', 'Lockers', true], ['desks', 'Study desks', false]],
+    make: (x) => [
+      ...[1, 2].map((k) => (x.triple ? newItem('bunk', { name: `Triple bunk ${k}`, params: MODELS.bunk.presets['Triple bunk (dormitory)'] }) : x.bunk && newItem('bunk', { name: `Bunk bed ${k}`, params: MODELS.bunk.presets['Dormitory bunk (2 × 80×190)'] }))),
+      x.lockers && cupItem('Lockers', 'Lockers (dormitory, 4 doors)', {}),
+      x.desks && comboItem('Study desks', 'd', { space: 2400, hutch: 'shelves', pedestal: false, deskD: 500 })] },
+  { id: 'minimal', label: 'Minimalist bedroom', icon: '◻️', sub: 'Floating platform bed, handle-less wardrobe',
+    room: { L: 4200, W: 3800, H: 2700, doors: doorC(500), tv: [] },
+    pick: [['bed', 'Floating platform bed + floating nightstands', true], ['ward', 'Push-to-open wardrobe', true], ['bench', 'Low storage / TV bench', false]],
+    make: (x) => [x.bed && bedItem('Platform bed', 'Minimalist platform (floating)'), x.ward && cupItem('Wardrobe', 'Push-to-open wardrobe (minimalist)'), x.bench && cupItem('Low bench', 'TV unit 1800 (low)', { hingeType: 'push', color: 'white', doorColor: 'white' })] },
+  { id: 'small', label: 'Small bedroom / studio', icon: '🏠', sub: 'Double bed, fold-down desk, compact wardrobe',
+    room: { L: 3400, W: 3200, H: 2700, doors: doorC(400), tv: [] },
+    pick: [['bed', 'Double bed 1200', true], ['combo', 'Wardrobe + fold-down desk', true]],
+    make: (x) => [x.bed && bedItem('Double bed', 'Home double (1400×1900)', { size: 'small', ns: 'right' }), x.combo && newItem('combo', { name: 'Wardrobe + fold-down desk', params: MODELS.combo.presets['Small room 1.8 m (fold-down desk)'] })] },
+  { id: 'curved', label: 'Room with a curved wall', icon: '🌙', sub: 'Bay or round wall: units that follow the curve',
+    room: { L: 4400, W: 4000, H: 2800, doors: [{ type: 'door', wall: 'D', pos: 500, w: 900, h: 2100, y: 0, swing: 'L' }], tv: [], curve: { wall: 'C', depth: 800 } },
+    pick: [['bed', 'Queen bed', true], ['curve', 'Curved unit along the curve', true], ['ward', 'Wardrobe', false]],
+    make: (x) => [x.bed && bedItem('Queen bed', 'Guest room queen (1600×2000)', { headStyle: 'channel' }), x.curve && newItem('curved', { name: 'Curved unit', params: { ...MODELS.curved.presets['Curved TV / sideboard'], chord: 4400, bulge: 800 } }), x.ward && cupItem('Wardrobe', 'Wardrobe 3-door 1500')] },
+  { id: 'walkin', label: 'Walk-in dressing room', icon: '👗', sub: 'For large houses: wardrobes on 3 walls + island',
+    room: { L: 3400, W: 3000, H: 2700, doors: doorC(1250), tv: [] },
+    pick: [['back', 'Back wall wardrobe', true], ['sides', 'Side wall wardrobes', true], ['island', 'Dressing island', true]],
+    make: (x) => [x.back && cupItem('Closet back wall', 'Walk-in closet wall (open)', { width: 3400 }), x.sides && cupItem('Closet side wall', 'Walk-in closet wall (open)', { width: 1500, sectionsMode: '2', sections: [{ rail: true }, { shelves: 6 }] }), x.sides && cupItem('Closet side wall (2)', 'Walk-in closet wall (open)', { width: 1500, sectionsMode: '2', sections: [{ shelves: 6 }, { rail: true }] }), x.island && cupItem('Dressing island', 'Dressing island (drawers)')] },
+  { id: 'living', label: 'Living room TV wall', icon: '📺', sub: 'TV unit with bookcases, or a curved unit',
+    room: { L: 5000, W: 4200, H: 2800, doors: doorC(600), tv: [{ wall: 'A', pos: 2500, y: 1200, size: 65 }] },
+    pick: [['tv', 'TV unit', true], ['books', 'Bookcases on both sides', true]],
+    make: (x) => [x.tv && cupItem('TV unit', 'TV unit 1800 (low)'), x.books && cupItem('Bookcase', 'Bookcase open', { width: 800, roundEnds: 'none' }), x.books && cupItem('Bookcase (2)', 'Bookcase open', { width: 800 })] },
+];
+
 const QUICK = [
   { label: 'Kitchen from my wall', icon: '🍳', sub: 'Enter the wall length',
     pick: [['walls', 'Wall cabinets', true], ['sink', 'Sink cabinet', true], ['cooker', 'Cooker space', true], ['fridge', 'Fridge space', true], ['worktop', 'Worktop', true]],
     make: (s) => [newItem('kitchenRun', { name: 'Kitchen', params: { walls: s.walls, sink: s.sink, cooker: s.cooker, fridge: s.fridge ? 'right' : 'none', worktop: s.worktop } })] },
-  { label: 'Plan a room', icon: '📐', sub: 'Room size, sockets, TV → furniture fitted', tab: 'room', room: true,
-    pick: [['bed', 'Bed', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', true], ['desk', 'Desk', true], ['coat', 'Coat rack', false]],
-    make: (s) => roomSet(s, { name: 'Queen bed', preset: 'Hotel queen (1600×2000)' }) },
-  { label: 'Hotel room set', icon: '🏨', sub: 'Pick: bed, nightstands, wardrobe, desk',
-    pick: [['bed', 'Queen bed', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', true], ['desk', 'Desk', false], ['coat', 'Coat rack', false]],
-    make: (s) => roomSet(s, { name: 'Queen bed', preset: 'Hotel queen (1600×2000)' }) },
-  { label: 'Joinable twin beds', icon: '🛏️', sub: '2 twins that make a king',
-    pick: [['bed', 'Twin beds', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', false], ['desk', 'Desk', false]],
-    make: (s) => roomSet(s, { name: 'Twin beds', preset: 'Joinable twins → king (2× 900×2000)' }) },
   { label: 'Wardrobe', icon: '🚪', sub: 'Doors, shelves, rail',
-    pick: [['rail', 'Hanging space', true], ['shelves', 'Shelf column', true], ['drawers', 'Drawers', false], ['doors', 'Doors', true]],
+    pick: [['rail', 'Hanging space', true], ['shelves', 'Shelf column', true], ['drawers', 'Drawers', false], ['doors', 'Doors', true], ['round', 'Rounded end shelves', false]],
     make: (s) => {
       const sections = [];
       if (s.rail) sections.push({ rail: true, share: s.shelves ? 2 : 1 });
       if (s.shelves || s.drawers || !s.rail) sections.push({ shelves: s.shelves || !s.rail ? 4 : 0, drawers: s.drawers ? 3 : 0, share: 1, hinge: 'R' });
-      return [newItem('cupboard', { name: 'Wardrobe', params: { ...MODELS.cupboard.presets['Wardrobe 3-door 1500'], width: sections.length > 1 ? 1500 : 1000, sectionsMode: String(sections.length), sections, style: s.doors ? 'closed' : 'open' } })];
+      return [newItem('cupboard', { name: 'Wardrobe', params: { ...MODELS.cupboard.presets['Wardrobe 3-door 1500'], width: sections.length > 1 ? 1500 : 1000, sectionsMode: String(sections.length), sections, style: s.doors ? 'closed' : 'open', roundEnds: s.round ? 'right' : 'none' } })];
     } },
+  { label: 'Bed', icon: '🛏️', sub: 'Single to king, twins that join',
+    pick: [['ns', 'Nightstands', true], ['twins', 'Two twins that join (instead of one bed)', false], ['padded', 'Upholstered headboard', true]],
+    make: (s) => [bedItem(s.twins ? 'Twin beds' : 'Queen bed', s.twins ? 'Joinable twins → king (2× 900×2000)' : 'Guest room queen (1600×2000)', { ns: s.ns ? 'both' : 'none', headStyle: s.padded ? 'channel' : 'plain' })] },
+  { label: 'Bunk / loft bed', icon: '🪜', sub: 'Dormitories and children',
+    pick: [['loft', 'Loft bed with desk under (instead of bunk)', false], ['three', 'Three levels', false]],
+    make: (s) => [newItem('bunk', { name: s.loft ? 'Loft bed' : 'Bunk bed', params: MODELS.bunk.presets[s.loft ? 'Loft bed with desk' : s.three ? 'Triple bunk (dormitory)' : 'Kids bunk (2 × 90×190)'] })] },
   { label: 'Bookcase / cupboard', icon: '📚', sub: 'Open or closed',
-    pick: [['doors', 'Doors', false], ['lower', 'Doors only below', false]],
-    make: (s) => [newItem('cupboard', { name: s.doors ? 'Cupboard' : 'Bookcase', params: { ...MODELS.cupboard.presets['Bookcase open'], style: s.lower ? 'lower' : s.doors ? 'closed' : 'open', depth: s.doors || s.lower ? 380 : 300 } })] },
+    pick: [['doors', 'Doors', false], ['lower', 'Doors only below', false], ['round', 'Rounded ends', false]],
+    make: (s) => [newItem('cupboard', { name: s.doors ? 'Cupboard' : 'Bookcase', params: { ...MODELS.cupboard.presets['Bookcase open'], style: s.lower ? 'lower' : s.doors ? 'closed' : 'open', depth: s.doors || s.lower ? 380 : 300, roundEnds: s.round ? 'both' : 'none' } })] },
+  { label: 'Curved unit', icon: '🌙', sub: 'For curved or bay walls', make: () => [newItem('curved', { name: 'Curved unit', params: MODELS.curved.presets['Curved TV / sideboard'] })] },
   { label: 'Cutting list only', icon: '✂️', sub: 'Type in your parts', make: () => [newItem('custom', { name: 'My parts' })] },
 ];
 
@@ -130,6 +181,17 @@ function pickPieces(q) {
 }
 
 function renderProjects() {
+  $('#rooms').replaceChildren(...ROOM_TYPES.map((r) => el('button', { class: 'quick', type: 'button', onclick: async () => {
+    const sel = await pickPieces(r);
+    if (!sel) return;
+    const p = newProject(r.label);
+    p.items.push(...r.make(sel).filter(Boolean));
+    p.room = { ...defaultRoom(), ...structuredClone(r.room) };
+    const entries = p.items.map((item) => { try { const out = buildItem(item, lib); return { item, out, fp: footprint(out) }; } catch { return null; } }).filter(Boolean);
+    autoArrange(p.room, entries);
+    saveProjects();
+    openProject(p, 'room');
+  } }, el('span', {}, r.icon), el('b', {}, r.label), el('small', {}, r.sub))));
   $('#quick').replaceChildren(...QUICK.map((q) => el('button', { class: 'quick', type: 'button', onclick: async () => {
     const sel = await pickPieces(q);
     if (!sel) return;
@@ -156,7 +218,7 @@ function renderProjects() {
       el('button', { class: 'icon-btn ghost', type: 'button', 'aria-label': 'More', onclick: () => projectMenu(p) }, '⋯')))));
 }
 $('#new-project').addEventListener('click', async () => {
-  const name = await ask('New project', 'e.g. Hotel rooms 2nd floor');
+  const name = await ask('New project', 'e.g. Bedrooms 2nd floor');
   if (!name) return;
   openProject(newProject(name));
 });
@@ -353,9 +415,27 @@ function openProject(p, startTab = 'items') {
       const NS = 'http://www.w3.org/2000/svg';
       const S = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); n.append(...kids.flat().filter((k) => k != null)); return n; };
       const m = 450;
-      const svg = S('svg', { viewBox: `${-m} ${-m} ${room.L + 2 * m} ${room.W + 2 * m}`, class: 'plan', role: 'img', 'aria-label': 'Room plan' });
-      svg.append(S('rect', { x: -100, y: -100, width: room.L + 200, height: room.W + 200, fill: '#57534e' }), S('rect', { x: 0, y: 0, width: room.L, height: room.W, fill: '#f6f0e6' }));
+      const cb = room.curve && room.curve.depth > 0 ? room.curve : null;
+      const ext = { A: [0, cb && cb.wall === 'A' ? cb.depth : 0], C: [0, cb && cb.wall === 'C' ? cb.depth : 0], B: [cb && cb.wall === 'B' ? cb.depth : 0, 0], D: [cb && cb.wall === 'D' ? cb.depth : 0, 0] };
+      const vx = -m - ext.D[0];
+      const vz = -m - ext.A[1];
+      const svg = S('svg', { viewBox: `${vx} ${vz} ${room.L + 2 * m + ext.D[0] + ext.B[0]} ${room.W + 2 * m + ext.A[1] + ext.C[1]}`, class: 'plan', role: 'img', 'aria-label': 'Room plan' });
       const txt = (x, y, t, size = 150, attrs = {}) => S('text', { x, y, 'font-size': size, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: '#44403c', ...attrs }, t);
+      svg.append(S('rect', { x: -100, y: -100, width: room.L + 200, height: room.W + 200, fill: '#57534e' }), S('rect', { x: 0, y: 0, width: room.L, height: room.W, fill: '#f6f0e6' }));
+      if (room.curve && room.curve.depth > 0) {
+        const c = wallLen(room, room.curve.wall);
+        const sg = Math.min(room.curve.depth, c / 2);
+        const R = (c * c / 4 + sg * sg) / (2 * sg);
+        const a0 = wallPoint(room, room.curve.wall, 0, 0);
+        const a1 = wallPoint(room, room.curve.wall, c, 0);
+        const mid = wallPoint(room, room.curve.wall, c / 2, -sg);
+        const sweep = ['A', 'B'].includes(room.curve.wall) ? 1 : 0;
+        const big = sg > c / 2 ? 1 : 0;
+        svg.append(S('path', { d: `M${a0.x} ${a0.z} A${R} ${R} 0 ${big} ${sweep ? 1 : 0} ${a1.x} ${a1.z} Z`, fill: '#f6f0e6', stroke: '#57534e', 'stroke-width': 100, 'stroke-linejoin': 'round' }));
+        svg.append(S('path', { d: `M${a0.x} ${a0.z} A${R} ${R} 0 ${big} ${sweep ? 1 : 0} ${a1.x} ${a1.z}`, fill: 'none', stroke: '#f6f0e6', 'stroke-width': 30 }));
+        svg.append(S('line', { x1: a0.x, y1: a0.z, x2: a1.x, y2: a1.z, stroke: '#f6f0e6', 'stroke-width': 210 }));
+        svg.append(txt(mid.x, mid.z, `curve ${L(sg)}`, 110, { fill: '#78716c' }));
+      }
       svg.append(txt(room.L / 2, -270, `A · ${L(room.L)}`, 150, { 'font-weight': 700 }), txt(room.L / 2, room.W + 270, 'C', 150, { 'font-weight': 700 }),
         txt(room.L + 270, room.W / 2, `B · ${L(room.W)}`, 130, { 'font-weight': 700, transform: `rotate(90 ${room.L + 270} ${room.W / 2})` }), txt(-270, room.W / 2, 'D', 150, { 'font-weight': 700 }));
       const seg = (wall, pos, w, d0, d1) => { const a = wallPoint(room, wall, pos, d0); const b = wallPoint(room, wall, pos + w, d1); return { x: Math.min(a.x, b.x), y: Math.min(a.z, b.z), width: Math.abs(b.x - a.x) || 1, height: Math.abs(b.z - a.z) || 1 }; };
@@ -383,7 +463,7 @@ function openProject(p, startTab = 'items') {
         const lc = wallPoint(room, s.wall, s.pos, 170);
         svg.append(txt(lc.x, lc.z, `${s.type === 'switch' ? 'sw' : '⚡'}${Math.round(s.y)}`, 80, { fill: '#713f12' }));
       }
-      const fills = { bed: '#e7d3bd', combo: '#d6c7a9', cupboard: '#d6c7a9', kitchenRun: '#cbd5e1', kitchenBase: '#cbd5e1', kitchenWall: '#cbd5e1', kitchenTall: '#cbd5e1', nightstand: '#e7d3bd', custom: '#e5e7eb' };
+      const fills = { bunk: '#e7d3bd', curved: '#d6c7a9', bed: '#e7d3bd', combo: '#d6c7a9', cupboard: '#d6c7a9', kitchenRun: '#cbd5e1', kitchenBase: '#cbd5e1', kitchenWall: '#cbd5e1', kitchenTall: '#cbd5e1', nightstand: '#e7d3bd', custom: '#e5e7eb' };
       for (const e of entries) {
         if (!e.item.place) continue;
         const pl = e.item.place;
@@ -391,11 +471,13 @@ function openProject(p, startTab = 'items') {
         const g = S('g', { class: 'plan-item', 'data-id': e.item.id });
         const poly = (pts) => pts.map((q) => `${q.x},${q.z}`).join(' ');
         const outline = corners(e.fp, pl);
-        g.append(S('polygon', { points: poly(outline), fill: fills[e.item.model] || '#e5e7eb', stroke: sel ? '#c2410c' : '#57534e', 'stroke-width': sel ? 30 : 12 }));
+        g.append(S('polygon', { points: poly(outline), fill: e.item.model === 'curved' ? 'rgba(0,0,0,0)' : fills[e.item.model] || '#e5e7eb', stroke: sel ? '#c2410c' : e.item.model === 'curved' ? 'none' : '#57534e', 'stroke-width': sel ? 30 : 12 }));
         for (const pn of e.out.panels) {
           if (['back', 'drawer', 'door'].includes(pn.role) || pn.box.y > 1400) continue;
           const b = pn.box;
-          g.append(S('polygon', { points: poly(corners({ x0: b.x, x1: b.x + b.w, z0: b.z, z1: b.z + b.d }, pl)), fill: finishById(pn.color).hex, 'fill-opacity': 0.55, stroke: '#57534e', 'stroke-width': 4 }));
+          let local = pn.shape && pn.shape.pts ? pn.shape.pts.map(([x, z]) => ({ x, z })) : [{ x: b.x, z: b.z }, { x: b.x + b.w, z: b.z }, { x: b.x + b.w, z: b.z + b.d }, { x: b.x, z: b.z + b.d }];
+          if (pn.frame) local = local.map((q) => frameXZ(pn.frame, q.x, q.z));
+          g.append(S('polygon', { points: poly(local.map((q) => toRoom(pl, q.x, q.z))), fill: finishById(pn.color).hex, 'fill-opacity': 0.55, stroke: '#57534e', 'stroke-width': 4 }));
         }
         const bx = aabb(e.fp, pl);
         g.append(txt((bx.x0 + bx.x1) / 2, (bx.z0 + bx.z1) / 2, e.item.name, Math.min(160, (bx.x1 - bx.x0) / 6), { 'font-weight': 700, fill: '#1c1917', 'pointer-events': 'none' }));
@@ -467,15 +549,17 @@ function openProject(p, startTab = 'items') {
             el('div', { class: 'row', style: { marginTop: '6px' } },
               el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('combo', w, a, b) }, '🧥 Wardrobe + desk + coat'),
               el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('cupboard', w, a, b) }, '🚪 Wardrobe'),
-              el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('kitchenRun', w, a, b) }, '🍳 Kitchen')))));
+              el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('kitchenRun', w, a, b) }, '🍳 Kitchen'),
+              room.curve && room.curve.depth > 0 && room.curve.wall === w ? el('button', { class: 'btn small', type: 'button', onclick: () => addFitted('curved', w, 0, wallLen(room, w)) }, '🌙 Curved unit') : null))));
       };
       let closeFn = null;
       const addFitted = (model, w, a, b) => {
         const len = Math.floor((b - a) / 10) * 10;
-        const params = model === 'combo' ? { space: len, ceil: room.H, height: Math.min(2200, room.H - 100) }
+        const params = model === 'curved' ? { ...MODELS.curved.presets['Curved TV / sideboard'], chord: len, bulge: room.curve.depth }
+          : model === 'combo' ? { space: len, ceil: room.H, height: Math.min(2200, room.H - 100) }
           : model === 'kitchenRun' ? { wallLen: len, ceiling: room.H }
           : { ...MODELS.cupboard.presets['Wardrobe 3-door 1500'], width: Math.min(len, 2400), height: Math.min(2200, room.H - 100) };
-        const it = newItem(model, { name: model === 'combo' ? 'Wardrobe + desk' : model === 'kitchenRun' ? 'Kitchen' : 'Wardrobe', params });
+        const it = newItem(model, { name: model === 'curved' ? 'Curved unit' : model === 'combo' ? 'Wardrobe + desk' : model === 'kitchenRun' ? 'Kitchen' : 'Wardrobe', params });
         p.items.push(it);
         const out = buildItem(it, lib);
         const fp = footprint(out);
@@ -493,6 +577,11 @@ function openProject(p, startTab = 'items') {
       { k: 'L', label: 'Length of walls A and C', type: 'num', len: true, min: 1000, max: 20000 },
       { k: 'W', label: 'Length of walls B and D', type: 'num', len: true, min: 1000, max: 20000 },
       { k: 'H', label: 'Ceiling height', type: 'num', len: true, min: 2000, max: 6000 },
+    ];
+    room.curve = room.curve || { wall: 'C', depth: 0 };
+    const curveFields = [
+      { k: 'wall', label: 'Curved wall', type: 'sel', opts: WALLS.map((w) => [w, `Wall ${w}`]) },
+      { k: 'depth', label: 'How far it curves out (0 = straight)', type: 'num', len: true, min: 0, max: 5000, help: 'For a bay or round wall: from the straight line between its ends to the deepest point.' },
     ];
     const wallOpt = WALLS.map((w) => [w, `Wall ${w}`]);
     const lists = [
@@ -523,6 +612,7 @@ function openProject(p, startTab = 'items') {
     const drawForm = () => {
       form.replaceChildren(
         el('details', { open: !entries.some((e) => e.item.place) }, el('summary', {}, 'Room size'), el('div', { class: 'fields' }, sizeFields.map((f) => fieldRow(f, room[f.k], (v) => { room[f.k] = v; clearTimeout(formT); formT = setTimeout(refresh, 300); })))),
+        el('details', {}, el('summary', {}, 'Curved wall'), el('div', { class: 'fields' }, curveFields.map((f) => fieldRow(f, room.curve[f.k], (v) => { room.curve[f.k] = v; clearTimeout(formT); formT = setTimeout(refresh, 300); })))),
         lists.map((f) => el('details', {}, el('summary', {}, `${f.label} (${(room[f.k] || []).length})`), el('div', { class: 'fields' }, fieldRow({ ...f, k: f.k === 'tv' ? 'tv' : f.k }, room[f.k] || [], (v, how = {}) => {
           room[f.k] = f.k === 'tv' ? v.slice(0, 1) : v;
           if (how.rerender) { drawForm(); refresh(); } else { clearTimeout(formT); formT = setTimeout(refresh, 300); }
@@ -918,6 +1008,7 @@ function cutText(p, list, edges) {
 }
 async function shareText(text, title) {
   try {
+    if (window.AnatsiAndroid) { window.AnatsiAndroid.share(title, text); return; }
     if (navigator.share) { await navigator.share({ title, text }); return; }
   } catch (e) { if (e.name === 'AbortError') return; }
   try { await navigator.clipboard.writeText(text); toast('Copied. Paste it into WhatsApp or Telegram.'); } catch {
@@ -936,6 +1027,7 @@ function downloadCSV(p, list) {
   const csv = '﻿' + [head, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
   downloadBlob(new Blob([csv], { type: 'text/csv' }), `${p.name} cut list.csv`);
 }
+function printNow() { if (window.AnatsiAndroid) window.AnatsiAndroid.print('Anatsi'); else window.print(); }
 function printReport(p, list, edges, hw) {
   const pr = $('#print');
   const lays = layoutSheets(list, lib, p.cutMode || lib.settings.cutMode);
@@ -949,14 +1041,14 @@ function printReport(p, list, edges, hw) {
     el('div', { class: 'page-break' }),
     lays.map((lay) => lay.sheets.map((sh, i) => el('div', { class: 'print-sheet' }, el('h2', {}, `${lay.material.name} · ${finishById(lay.color).name} · sheet ${i + 1} of ${lay.sheets.length}`), sheetSVG(lay, sh, list, U(), { big: true }),
       sh.steps && sh.steps.length ? el('p', { style: { fontSize: '8pt', whiteSpace: 'pre-wrap' } }, sh.steps.map((s) => s.text.trim()).join(' · ')) : null))));
-  setTimeout(() => window.print(), 100);
+  setTimeout(printNow, 100);
 }
 function printLabels(p, list) {
   const pr = $('#print');
   const labels = [];
   for (const g of list) for (let i = 0; i < g.qty; i++) labels.push(el('div', { class: 'label' }, el('b', {}, `#${g.no}`), ` ${g.name}`, el('br'), `${L(g.cutL, false)} × ${L(g.cutW, false)} · ${matById(lib, g.mat).T} mm ${finishById(g.color).name}`, el('br'), `Edges: ${edgeText(g)}${g.grain ? ' · grain ↔' : ''}`, el('br'), el('small', {}, `${p.name} · ${g.itemNames.join(', ')}`)));
   pr.replaceChildren(el('div', { class: 'labels' }, labels));
-  setTimeout(() => window.print(), 100);
+  setTimeout(printNow, 100);
 }
 
 /* ================================================================ materials & prices */
@@ -1038,7 +1130,7 @@ function renderGuide() {
   const cat = GUIDE.find((c) => c.id === guideCat) || GUIDE[0];
   const priceText = (k) => { const h = lib.hardware[k]; const v = h ? priceOf(h, lib) : 0; return v ? `${Math.round(v).toLocaleString()} ${lib.settings.currency} / ${h.unit === 'pcs' ? 'piece' : h.unit}` : null; };
   body.replaceChildren(
-    el('div', { class: 'guide-cats', role: 'group', 'aria-label': 'Categories' }, GUIDE.map((c) => el('button', { type: 'button', 'aria-pressed': String(c.id === cat.id), onclick: () => { guideCat = c.id; renderGuide(); window.scrollTo(0, 0); } }, `${c.icon} ${c.title}`))),
+    el('div', { class: 'guide-cats', role: 'group', 'aria-label': 'Categories' }, GUIDE.map((c) => el('button', { type: 'button', 'aria-pressed': String(c.id === cat.id), onclick: () => { guideCat = c.id; renderGuide(); window.scrollTo(0, 0); } }, `${c.icon} `, c.title))),
     el('p', {}, cat.intro),
     cat.diagram ? guideDiagram(cat.diagram) : null,
     cat.items.map((it, i) => el('details', { class: 'guide-item', open: i === 0 },
@@ -1058,6 +1150,7 @@ function renderSettings() {
   const selI = (k, opts) => el('select', { onchange: (e) => { s[k] = e.target.value; saveLib(); } }, opts.map(([v, t]) => el('option', { value: v, selected: s[k] === v }, t)));
   $('#settings-body').replaceChildren(
     el('div', { class: 'form', style: { padding: 0 } }, el('details', { open: true }, el('summary', {}, 'Cutting'), el('div', { class: 'fields' },
+      row('Language', el('select', { onchange: (e) => setLang(e.target.value) }, Object.entries(LANGS).map(([k, t]) => el('option', { value: k, selected: (getLang() || 'en') === k }, t)))),
       row('Units', selI('units', [['mm', 'Millimetres'], ['cm', 'Centimetres'], ['in', 'Inches']])),
       row('Saw blade width (kerf)', n('kerf', { step: 0.1 }), 'Lost to the saw at every cut. Usually 3–4.5 mm.'),
       row('Edge trim on each sheet', n('trim'), 'Factory edges are often chipped: trim them first.'),
@@ -1077,11 +1170,21 @@ function renderSettings() {
       (() => { const ta = el('textarea', { rows: 6, style: { width: '100%', fontFamily: 'monospace', fontSize: '.75rem', padding: '8px', border: '1px solid var(--line)', borderRadius: '10px' } }, JSON.stringify({ projects, library: { materials: lib.materials, edges: lib.edges, hardware: lib.hardware, settings: lib.settings, roles: lib.roles } }));
         return [ta, el('div', { class: 'row' },
           el('button', { class: 'btn small', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(ta.value); toast('Copied'); } catch { ta.select(); } } }, 'Copy'),
+          el('button', { class: 'btn small', type: 'button', onclick: () => downloadBlob(new Blob([ta.value], { type: 'application/json' }), `anatsi-backup-${new Date().toISOString().slice(0, 10)}.json`) }, 'Save backup file'),
           el('button', { class: 'btn small', type: 'button', onclick: () => { try { const d = JSON.parse(ta.value); if (Array.isArray(d.projects)) { const ids = new Set(projects.map((x) => x.id)); for (const pr of d.projects) if (!ids.has(pr.id)) projects.push(pr); saveProjects(); } if (d.library) { saveLibrary(d.library); lib = loadLibrary(); } toast('Imported'); renderSettings(); } catch { toast('That isn’t an Anatsi backup.'); } } }, 'Import'))]; })()))),
     el('p', { class: 'muted tiny', style: { marginTop: '18px' } }, 'Anatsi is free and open source: no ads, no account, nothing locked. Everything stays on this phone.'));
 }
 
 /* ================================================================ start */
+await startI18n();
 history.replaceState({ n: 0 }, '');
+// language switch on the home screen
+const langBtn = el('button', { class: 'btn small lang-btn', type: 'button', 'aria-label': 'Language', onclick: () => setLang(getLang() === 'am' ? 'en' : 'am') }, getLang() === 'am' ? 'English' : 'አማርኛ');
+document.querySelector('#screen-projects .app-head')?.insertBefore(langBtn, $('#new-project'));
 showTab('projects');
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+if (!getLang()) {
+  sheet('Choose language · ቋንቋ ይምረጡ', el('div', { class: 'menu' },
+    el('button', { type: 'button', onclick: () => setLang('am') }, el('span', { class: 'i' }, 'አ'), 'አማርኛ'),
+    el('button', { type: 'button', onclick: () => setLang('en') }, el('span', { class: 'i' }, 'A'), 'English')));
+}
+if ('serviceWorker' in navigator && !window.AnatsiAndroid) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

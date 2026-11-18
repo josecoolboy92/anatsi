@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'et.anatsi.app'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'et.anatsi.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 2
+        versionName '1.1'
+    }
+    signingConfigs {
+        release {
+            storeFile file('../anatsi-release.keystore')
+            storePassword System.getenv('ANATSI_KS_PASS')
+            keyAlias 'anatsi'
+            keyPassword System.getenv('ANATSI_KS_PASS')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    androidResources { noCompress += ['js', 'css', 'html', 'json', 'svg'] }
+}
+
+dependencies { }

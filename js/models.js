@@ -416,25 +416,28 @@ MODELS.bed = {
     num('mL', 'Mattress length', 2000, { min: 1500, max: 2400, section: 'Size', when: (p) => p.size === 'custom' }),
     num('mT', 'Mattress thickness', 220, { min: 80, max: 400, section: 'Size' }),
     sel('count', 'Beds', '1', [['1', 'One bed'], ['2', 'Two twins that join into one (zip & link)']], { section: 'Size', help: 'Two twin frames side by side with connector brackets: use them apart as twins or joined as a king.' }),
-    sel('grade', 'Build grade', 'medium', Object.entries(GRADES).map(([k, g]) => [k, g.name]), { section: 'Grade & steel', sets: (v) => BED_GRADE_SETS[v] || {}, help: 'Sets the steel, deck, rails and boards. Economy = cheap. Medium = fair for long-term use. Strong = welded frame for hotels and heavy use.' }),
+    sel('grade', 'Build grade', 'medium', Object.entries(GRADES).map(([k, g]) => [k, g.name]), { section: 'Grade & steel', sets: (v) => BED_GRADE_SETS[v] || {}, help: 'Sets the steel, deck, rails and boards. Economy = cheap. Medium = fair for long-term use. Strong = welded frame for the heaviest use.' }),
     sel('support', 'Steel / supports under the deck', 'medium', [['economy', 'Economy: 25×25 tubes on holder strips'], ['medium', 'Medium: angle 30×30 + 40×20 tubes'], ['strong', 'Strong: welded 40×40 frame + 40×20 tubes'], ['wood', 'Timber battens 45×70'], ['none', 'None: deck rests on the holders only']], { section: 'Grade & steel' }),
     sel('deck', 'Mattress support', 'board', [['board', 'Board deck (plywood / MDF)'], ['slats', 'Wooden slats']], { section: 'Grade & steel' }),
     mat('deckMat', 'Deck board', '@deck', { section: 'Grade & steel', when: (p) => p.deck === 'board' }),
-    sel('duty', 'Use', 'hotel', [['home', 'Home'], ['hotel', 'Hotel / heavy use (closer supports)']], { section: 'Grade & steel' }),
+    sel('duty', 'Use', 'hotel', [['home', 'Home'], ['hotel', 'Heavy use: guest rooms, rentals, children (closer supports)']], { section: 'Grade & steel' }),
     num('clear', 'Space around the mattress', 10, { min: 0, max: 40, section: 'Frame' }),
     num('railH', 'Rail height', 260, { min: 120, max: 450, section: 'Frame' }),
-    cnt('railLayers', 'Rail board layers', 2, { min: 1, max: 3, section: 'Frame', help: '2 layers (36 mm) makes strong rails for heavy hotel use.' }),
+    cnt('railLayers', 'Rail board layers', 2, { min: 1, max: 3, section: 'Frame', help: '2 layers (36 mm) makes strong rails for heavy use.' }),
     num('legH', 'Height under the rails (legs)', 120, { min: 0, max: 400, section: 'Frame', help: '0 = rails sit on the floor (easy to clean, nothing falls under).' }),
     num('recess', 'Mattress sits below the rail top by', 60, { min: 0, max: 200, section: 'Frame' }),
+    bool('floatBase', 'Floating base (recessed plinth)', false, { section: 'Frame', help: 'A plinth set 120 mm in from the edges, so the bed seems to float. Good for minimalist rooms; add an LED strip under the rails.' }),
+    sel('guard', 'Safety guard rail (children)', 'none', [['none', 'None'], ['left', 'Left side'], ['right', 'Right side'], ['both', 'Both sides']], { section: 'Frame' }),
+    num('guardH', 'Guard height above the mattress', 250, { min: 160, max: 400, section: 'Frame', when: (p) => p.guard !== 'none', help: 'At least 160 mm above the mattress top.' }),
     num('ledgerH', 'Deck holder strip height', 50, { min: 30, max: 100, section: 'Frame', help: 'Strips screwed and glued inside the rails. The steel rests on them, and the deck rests on the steel.' }),
-    sel('head', 'Headboard height', 'standard', [['none', 'None'], ['low', 'Low (900 mm)'], ['standard', 'Standard (1100 mm)'], ['tall', 'Tall (1300 mm)'], ['hotel', 'Hotel tall (1500 mm)'], ['custom', 'Custom height']], { section: 'Headboard' }),
+    sel('head', 'Headboard height', 'standard', [['none', 'None'], ['low', 'Low (900 mm)'], ['standard', 'Standard (1100 mm)'], ['tall', 'Tall (1300 mm)'], ['hotel', 'Extra tall (1500 mm)'], ['custom', 'Custom height']], { section: 'Headboard' }),
     num('headH', 'Headboard height from floor', 1100, { min: 600, max: 2600, section: 'Headboard', when: (p) => p.head === 'custom' }),
     sel('headWidth', 'Headboard width', 'bed', [['bed', 'Same as the bed'], ['over', 'Bed + 50 mm each side'], ['wide', 'Wide: also behind the nightstands'], ['custom', 'Custom width']], { section: 'Headboard', when: (p) => p.head !== 'none' }),
     num('headWc', 'Headboard width', 2400, { min: 600, max: 5000, section: 'Headboard', when: (p) => p.head !== 'none' && p.headWidth === 'custom' }),
     cnt('headLayers', 'Headboard board layers', 1, { min: 1, max: 2, section: 'Headboard', when: (p) => p.head !== 'none' }),
     bool('shared', 'One headboard across both twins', true, { section: 'Headboard', when: (p) => p.count === '2' && p.head !== 'none' }),
     sel('headStyle', 'Headboard style', 'plain', HEAD_STYLES, { section: 'Headboard style', when: (p) => p.head !== 'none', help: 'Upholstery (tapisserie) needs foam and fabric. The MDF styles give a similar look with only MDF and paint: cheaper, easier to clean, nothing to wear out.' }),
-    sel('foam', 'Foam thickness', '50', [['25', '25 mm (thin, firm)'], ['50', '50 mm (standard)'], ['75', '75 mm (plush hotel)']], { section: 'Headboard style', when: (p) => p.head !== 'none' && UPHOLSTERED.includes(p.headStyle) }),
+    sel('foam', 'Foam thickness', '50', [['25', '25 mm (thin, firm)'], ['50', '50 mm (standard)'], ['75', '75 mm (plush)']], { section: 'Headboard style', when: (p) => p.head !== 'none' && UPHOLSTERED.includes(p.headStyle) }),
     sel('fabric', 'Fabric', 'velvet', [['velvet', 'Velvet'], ['linen', 'Linen / woven'], ['leather', 'Faux leather (PU)'], ['suede', 'Suede'], ['boucle', 'Bouclé']], { section: 'Headboard style', when: (p) => p.head !== 'none' && UPHOLSTERED.includes(p.headStyle) }),
     color('fabricColor', 'Fabric color', 'cream', { section: 'Headboard style', when: (p) => p.head !== 'none' && UPHOLSTERED.includes(p.headStyle) }),
     num('padTop', 'Space above the padding', 80, { min: 0, max: 400, section: 'Headboard style', when: (p) => p.head !== 'none' && p.headStyle !== 'plain' }),
@@ -472,10 +475,12 @@ MODELS.bed = {
     color('nsFront', 'Drawer front color', 'cream', { section: 'Materials & colors' }),
   ].filter(Boolean),
   presets: {
-    'Hotel queen (1600×2000)': { size: 'queen', count: '1', grade: 'strong', ...BED_GRADE_SETS.strong, head: 'hotel', headWidth: 'wide', headStyle: 'channel', ns: 'both', legH: 0 },
-    'Hotel twin (1000×2000)': { size: 'twin', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, head: 'standard', headStyle: 'padded', ns: 'left', legH: 0 },
+    'Guest room queen (1600×2000)': { size: 'queen', count: '1', grade: 'strong', ...BED_GRADE_SETS.strong, head: 'hotel', headWidth: 'wide', headStyle: 'channel', ns: 'both', legH: 0 },
+    'Guest room twin (1000×2000)': { size: 'twin', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, head: 'standard', headStyle: 'padded', ns: 'left', legH: 0 },
     'Joinable twins → king (2× 900×2000)': { size: 'single200', count: '2', grade: 'strong', ...BED_GRADE_SETS.strong, head: 'tall', shared: true, headStyle: 'panels', ns: 'both', legH: 0 },
-    'Hotel king suite (1800×2000)': { size: 'king', count: '1', grade: 'strong', ...BED_GRADE_SETS.strong, head: 'hotel', headWidth: 'wide', headStyle: 'tufted', foam: '75', ns: 'both', legH: 0 },
+    'Master bedroom king (1800×2000)': { size: 'king', count: '1', grade: 'strong', ...BED_GRADE_SETS.strong, head: 'hotel', headWidth: 'wide', headStyle: 'tufted', foam: '75', ns: 'both', legH: 0 },
+    'Kids single with guard rail': { size: 'single', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, duty: 'hotel', head: 'low', headStyle: 'padded', guard: 'left', ns: 'right', legH: 100, headColor: 'sage', color: 'white', nsColor: 'white' },
+    'Minimalist platform (floating)': { size: 'queen', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, duty: 'home', head: 'low', headStyle: 'plain', headWidth: 'wide', ns: 'both', nsBase: 'floating', floatBase: true, legH: 120, railH: 200, recess: 40, color: 'white', headColor: 'oak', nsColor: 'oak', nsFront: 'oak' },
     'Cheap single (900×1900)': { size: 'single', count: '1', grade: 'economy', ...BED_GRADE_SETS.economy, duty: 'home', head: 'low', headStyle: 'plain', ns: 'right' },
     'Home double (1400×1900)': { size: 'double', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, duty: 'home', head: 'standard', headStyle: 'slats', ns: 'both' },
     'Fluted MDF queen (no fabric)': { size: 'queen', count: '1', grade: 'medium', ...BED_GRADE_SETS.medium, head: 'tall', headWidth: 'wide', headStyle: 'fluted', ns: 'both', nsBase: 'floating' },
@@ -611,7 +616,16 @@ MODELS.bed = {
         for (let k = 0; k < nsl; k++) for (let r = 0; r < rows; r++) out.bars.push({ x: x0 + rt + t + 2 + r * (slatLen + 20), y: deckTop - 18, z: rt + 30 + k * (70 + gap), w: slatLen, h: 18, d: 70, kind: 'wood' });
         out.notes.push(`${pre}${nsl * rows} slats, ${Math.round(slatLen)} mm long, gaps ${gap} mm (keep under 70 mm).`);
       }
-      if (p.legH > 0) {
+      if (p.legH > 0 && p.floatBase) {
+        const ins = 120;
+        const pw = OW - 2 * ins;
+        const pl = OL - 2 * ins;
+        P('Floating plinth (side)', { L: pl, W: p.legH, role: 'plinth', box: { x: x0 + ins, y: 0, z: ins, w: t, h: p.legH, d: pl } });
+        P('Floating plinth (side)', { L: pl, W: p.legH, role: 'plinth', box: { x: x0 + OW - ins - t, y: 0, z: ins, w: t, h: p.legH, d: pl } });
+        P('Floating plinth (end)', { L: pw - 2 * t, W: p.legH, role: 'plinth', box: { x: x0 + ins + t, y: 0, z: ins, w: pw - 2 * t, h: p.legH, d: t } });
+        P('Floating plinth (end)', { L: pw - 2 * t, W: p.legH, role: 'plinth', box: { x: x0 + ins + t, y: 0, z: OL - ins - t, w: pw - 2 * t, h: p.legH, d: t } });
+        out.notes.push(`${pre}Floating base: plinth ${p.legH} mm high, ${ins} mm in from every edge, screwed to the rails with corner blocks. Paint it dark; an LED strip under the rail edge makes the bed look like it floats.`);
+      } else if (p.legH > 0) {
         addHw(out, 'bedLeg', 4);
         out.legs.push(...[[x0 + 40, 40], [x0 + OW - 40, 40], [x0 + 40, OL - 40], [x0 + OW - 40, OL - 40]].map(([lx, lz]) => ({ x: lx, z: lz, h: p.legH, y: 0 })));
       }
@@ -669,6 +683,20 @@ MODELS.bed = {
       });
       if (headH < mattressTop + 300) out.warnings.push(`The headboard (${headH} mm) is only ${Math.round(headH - mattressTop)} mm above the mattress top: pillows need about 300 mm or more.`);
       cutouts(p, out, headH, mattressTop);
+    }
+
+    // ---- child guard rails
+    if (p.guard && p.guard !== 'none') {
+      const gl = Math.min(1300, OL - 500);
+      const gTop = mattressTop + p.guardH;
+      const gy = railTop - 80;
+      for (const side of p.guard === 'both' ? ['left', 'right'] : [p.guard]) {
+        const gx = side === 'left' ? -t : totalW;
+        out.panels.push(panel(`Guard rail (${side})`, { mat: p.mat, color: p.headColor, L: gl, W: gTop - gy, eL: 2, eW: 2, edge: 'thick', role: 'head', group: 'Bed', box: { x: gx, y: gy, z: rt + 80, w: t, h: gTop - gy, d: gl }, explode: [side === 'left' ? -1 : 1, 0, 0] }));
+        addHw(out, 'bolt8', 3);
+      }
+      out.notes.push(`Guard rail: ${gl} mm long from the head end, top ${Math.round(gTop)} mm from the floor (${p.guardH} mm above the mattress). Bolt it to the side rail with 3 M8 bolts; round all corners (R10) and keep any gap under it smaller than 75 mm or larger than 230 mm so a child can’t get stuck.`);
+      if (p.guardH < 160) out.warnings.push('The guard must be at least 160 mm above the mattress top.');
     }
 
     // ---- footboard
@@ -860,6 +888,7 @@ MODELS.cupboard = {
     sel('top', 'Top', 'over', [['over', 'Top sits on the sides'], ['full', 'Top between the sides']], { section: 'Construction' }),
     num('gap', 'Gap around doors', 3, { min: 1, max: 6, section: 'Construction' }),
     num('maxDoor', 'Widest allowed door', 600, { min: 300, max: 900, section: 'Construction' }),
+    sel('roundEnds', 'Rounded open shelves at the ends', 'none', [['none', 'None'], ['left', 'Left end'], ['right', 'Right end'], ['both', 'Both ends']], { section: 'Layout', help: 'Quarter-circle shelves (radius = depth) soften the corners: good beside doors, in passages and in children’s rooms.' }),
     gradeParam({ economy: { ...GRADE_SETS.economy, base: 'plinth' }, medium: { ...GRADE_SETS.medium, base: 'plinth' }, strong: { ...GRADE_SETS.strong, base: 'steel' } }),
     hingeParam(),
     ...MATERIAL_PARAMS({ color: 'sonoma', doorColor: 'sonoma' }),
@@ -868,10 +897,18 @@ MODELS.cupboard = {
     'Wardrobe 2-door 1000': { width: 1000, height: 2100, depth: 580, style: 'closed', sectionsMode: '1', sections: [{ rail: true, shelves: 0 }] },
     'Wardrobe 3-door 1500': { width: 1500, height: 2200, depth: 600, style: 'closed', sectionsMode: '2', sections: [{ rail: true, share: 2 }, { shelves: 5, doors: '1', hinge: 'R', share: 1 }] },
     'Wardrobe 4-door 2000': { width: 2000, height: 2200, depth: 600, style: 'closed', sectionsMode: '2', sections: [{ rail: true }, { shelves: 3, drawers: 2 }] },
-    'Hotel wardrobe 900': { width: 900, height: 2000, depth: 580, style: 'closed', sectionsMode: '1', sections: [{ rail: true }] },
+    'Compact wardrobe 900': { width: 900, height: 2000, depth: 580, style: 'closed', sectionsMode: '1', sections: [{ rail: true }] },
     'Bookcase open': { width: 900, height: 2000, depth: 300, style: 'open', sectionsMode: 'auto', sections: [{ shelves: 5 }], base: 'plinth' },
     'Cupboard closed 4 shelves': { width: 800, height: 1800, depth: 420, style: 'closed', sectionsMode: '1', sections: [{ shelves: 4 }] },
     'Display: doors below, open above': { width: 1200, height: 1900, depth: 380, style: 'lower', splitH: 850, sectionsMode: 'auto', sections: [{ shelves: 4 }] },
+    'Large wardrobe 3.0 m (big house)': { width: 3000, height: 2400, depth: 620, style: 'closed', sectionsMode: '4', sections: [{ rail: true, share: 1.3 }, { shelves: 4, drawers: 3, share: 1 }, { rail: true, share: 1.3 }, { shelves: 6, share: 0.8 }], grade: 'strong', base: 'plinth', roundEnds: 'right' },
+    'Walk-in closet wall (open)': { width: 2400, height: 2400, depth: 550, style: 'open', sectionsMode: '3', sections: [{ rail: true }, { shelves: 5, drawers: 2 }, { rail: true }] },
+    'Dressing island (drawers)': { width: 1200, height: 900, depth: 600, style: 'closed', sectionsMode: '2', sections: [{ drawers: 4, drawerFill: true }, { drawers: 4, drawerFill: true }], top: 'over', base: 'plinth' },
+    'Kids wardrobe (rounded ends)': { width: 1000, height: 1600, depth: 550, style: 'closed', sectionsMode: '2', sections: [{ rail: true }, { shelves: 3 }], roundEnds: 'both', hingeType: 'full', grade: 'medium', doorColor: 'sage', color: 'white' },
+    'Push-to-open wardrobe (minimalist)': { width: 1800, height: 2400, depth: 600, style: 'closed', sectionsMode: '3', sections: [{ rail: true }, { shelves: 5 }, { rail: true }], hingeType: 'push', color: 'white', doorColor: 'white' },
+    'Lockers (dormitory, 4 doors)': { width: 1200, height: 1800, depth: 500, style: 'closed', sectionsMode: '4', sections: [{ shelves: 2, doors: '1' }], grade: 'strong', color: 'grey', doorColor: 'grey' },
+    'TV unit 1800 (low)': { width: 1800, height: 500, depth: 420, style: 'closed', sectionsMode: '3', sections: [{ shelves: 1 }, { shelves: 1, doors: '0' }, { shelves: 1 }], base: 'legs', plinthH: 120, top: 'over' },
+    'Low toy shelves (kids)': { width: 1200, height: 900, depth: 350, style: 'open', sectionsMode: '2', sections: [{ shelves: 2 }], roundEnds: 'both', color: 'white' },
     'Shoe cabinet': { width: 800, height: 1000, depth: 350, style: 'closed', sectionsMode: '1', sections: [{ shelves: 4 }], base: 'legs', plinthH: 100 },
   },
   build(p, lib) {
@@ -884,7 +921,7 @@ MODELS.cupboard = {
     const sections = Array.from({ length: n }, (_, i) => {
       const s = { ...SECTION_FIELDS.reduce((a, f) => ({ ...a, [f.k]: f.def }), {}), ...(list[i] || list[list.length - 1]) };
       return {
-        shelves: Number(s.shelves) || 0, rail: !!s.rail, drawers: Number(s.drawers) || 0, adjustable: s.adjustable !== false,
+        shelves: Number(s.shelves) || 0, rail: !!s.rail, drawers: Number(s.drawers) || 0, drawerFill: !!s.drawerFill, adjustable: s.adjustable !== false,
         doors: s.doors === 'auto' ? 'auto' : Number(s.doors), hinge: s.hinge || (i === n - 1 && n > 1 ? 'R' : 'L'),
         open: p.style === 'open' || s.doors === '0',
         split: p.style === 'lower' ? p.splitH - base - t : undefined, lowerDoorsOnly: p.style === 'lower', share: Number(s.share) || 1,
@@ -892,6 +929,25 @@ MODELS.cupboard = {
     });
     carcass({ x0: 0, y0: base, z0: 0, W: p.width, H, D: p.depth, T: t, mat: p.mat, color: p.color, doorMat: p.doorMat, doorColor: p.doorColor, doorT: T(lib, p.doorMat), doorEdge: p.doorEdge, backMat: p.backMat, backT: T(lib, p.backMat), top: p.top, sections, gap: p.gap, maxDoor: p.maxDoor, grade: p.grade, hingeType: p.hingeType === 'flap' && p.height > 900 ? 'full' : p.hingeType }, out, lib);
     if (p.base === 'steel' && base) steelBase(out, 0, p.width, p.depth, base);
+    out.size = { w: p.width, h: p.height, d: p.depth };
+    // rounded quarter-circle shelves outside the end panels
+    const ends = p.roundEnds === 'both' ? ['left', 'right'] : p.roundEnds && p.roundEnds !== 'none' ? [p.roundEnds] : [];
+    if (ends.length) {
+      const R = p.depth;
+      const nSh = Math.max(3, Math.round(p.height / 380));
+      const quarter = (cx, dir) => { const pts = [[cx, 0]]; for (let k = 0; k <= 12; k++) { const a = (k / 12) * (Math.PI / 2); pts.push([cx + dir * R * Math.cos(a), R * Math.sin(a)]); } return pts; };
+      for (const side of ends) {
+        const cx = side === 'left' ? 0 : p.width;
+        const dir = side === 'left' ? -1 : 1;
+        for (let k = 0; k <= nSh; k++) {
+          const y = k === 0 ? base : k === nSh ? p.height - t : base + ((p.height - base - t) * k) / nSh;
+          out.panels.push(panel(`Round end (${side}) · ${k === 0 ? 'bottom' : k === nSh ? 'top' : 'shelf'}`, { mat: p.mat, color: p.color, L: R, W: R, eL: 1, edge: 'thick', role: 'shelf', grain: false, note: `Cut a quarter circle, radius ${R} mm`, box: { x: side === 'left' ? -R : p.width, y, z: 0, w: R, h: t, d: R }, shape: { pts: quarter(cx, dir) } }));
+        }
+      }
+      out.notes.push(`Rounded ends: ${nSh + 1} quarter-circle shelves per end, radius ${R} mm. Cut them with a jigsaw and sand, or with a router on a trammel (pin at the back corner). Band the curve with flexible 2 mm PVC (heat it with a hot-air gun). Fix each shelf to the end panel with 3 dowels or screws and to the wall with a small batten.`);
+      out.size.w = p.width + ends.length * R;
+      if (ends.includes('left')) out.offsetX = -R;
+    }
     if (p.base === 'plinth' && base) {
       out.panels.push(panel('Plinth (front)', { mat: p.mat, color: p.color, L: p.width - 2 * t, W: base, eL: 1, role: 'plinth', box: { x: t, y: 0, z: p.depth - 40 - t, w: p.width - 2 * t, h: base, d: t }, explode: [0, -1, 0.5] }));
       out.panels.push(panel('Plinth (back)', { mat: p.mat, color: p.color, L: p.width - 2 * t, W: base, role: 'plinth', box: { x: t, y: 0, z: 40, w: p.width - 2 * t, h: base, d: t }, explode: [0, -1, -0.5] }));
@@ -901,7 +957,7 @@ MODELS.cupboard = {
     }
     if (p.height > 1200) { addHw(out, 'wallAnchor', 2); out.notes.push('Tall furniture: fix it to the wall with anti-tip anchors.'); }
     if (sections.some((s) => s.rail) && p.depth < 530) out.warnings.push(`Depth ${p.depth} mm is too shallow for clothes hangers (need about 530 mm or more).`);
-    out.size = { w: p.width, h: p.height, d: p.depth };
+    if (!out.size.w) out.size = { w: p.width, h: p.height, d: p.depth };
     return out;
   },
 };
@@ -964,7 +1020,7 @@ MODELS.combo = {
     ...MATERIAL_PARAMS({ color: 'sonoma', doorColor: 'sonoma' }),
   ],
   presets: {
-    'Hotel room wall 2.6 m': { space: 2600, order: 'wdc', deskType: 'fixed', hutch: 'shelves' },
+    'Bedroom wall 2.6 m': { space: 2600, order: 'wdc', deskType: 'fixed', hutch: 'shelves' },
     'Small room 1.8 m (fold-down desk)': { space: 1800, order: 'wd', deskType: 'fold', hutch: 'none' },
     'Entrance: coat + wardrobe 1.5 m': { space: 1500, order: 'cw', bench: true },
   },
@@ -1080,6 +1136,204 @@ MODELS.combo = {
     if (p.frame === 'steel') steelBase(out, x, w, d || p.depth, h);
     else if (p.frame === 'legs') addHw(out, 'legKitchen', w > 1000 ? 6 : 4);
     else out.panels.push(panel('Plinth', { mat: p.mat, color: p.color, L: w - 2 * t, W: h, eL: 1, role: 'plinth', box: { x: x + t, y: 0, z: (d || p.depth) - 40 - t, w: w - 2 * t, h, d: t } }));
+  },
+};
+
+
+/* ================================================================ BUNK / LOFT BED (dormitories, children) */
+
+MODELS.bunk = {
+  name: 'Bunk bed / loft bed', icon: '🪜', group: 'Bedroom',
+  desc: 'Two or three beds stacked, or one high bed with a desk, wardrobe or play space under it. Guards, ladder, posts and steel supports.',
+  params: [
+    sel('size', 'Mattress size', 'bunk', BED_SIZES, { section: 'Size' }),
+    num('mT', 'Mattress thickness', 150, { min: 80, max: 250, section: 'Size', help: 'Bunks use thin mattresses so the top guard stays high enough.' }),
+    sel('levels', 'Beds', '2', [['2', '2 (bunk)'], ['3', '3 (triple bunk)'], ['1', '1 high bed (loft)']], { section: 'Size' }),
+    sel('under', 'Under the high bed', 'desk', [['desk', 'Desk'], ['wardrobe', 'Wardrobe'], ['open', 'Open (sofa / play space)']], { section: 'Size', when: (p) => p.levels === '1' }),
+    num('lowH', 'Bottom deck height', 300, { min: 100, max: 500, section: 'Size', when: (p) => p.levels !== '1' }),
+    num('gap', 'Sitting space between beds', 800, { min: 650, max: 1100, section: 'Size', help: 'From a mattress top to the deck above: 750–850 mm lets an adult sit up.' }),
+    num('loftH', 'High bed deck height', 1500, { min: 1200, max: 1900, section: 'Size', when: (p) => p.levels === '1' }),
+    num('ceil', 'Ceiling height', 2700, { min: 2200, max: 4000, section: 'Size' }),
+    num('guardH', 'Top guard above the mattress', 200, { min: 160, max: 350, section: 'Safety' }),
+    sel('ladder', 'Ladder', 'right', [['right', 'Right side, at the foot end'], ['left', 'Left side, at the foot end']], { section: 'Safety' }),
+    num('ladderW', 'Ladder width', 400, { min: 300, max: 500, section: 'Safety' }),
+    sel('grade', 'Build grade', 'strong', Object.entries(GRADES).map(([k, g]) => [k, g.name]), { section: 'Grade & steel', sets: (v) => ({ support: v, mat: v === 'economy' ? '@carcass' : '@door' }) }),
+    sel('support', 'Steel under each deck', 'strong', [['economy', 'Economy: 25×25 tubes'], ['medium', 'Medium: angle + 40×20 tubes'], ['strong', 'Strong: welded 40×40 frame']], { section: 'Grade & steel' }),
+    mat('deckMat', 'Deck board', '@deck', { section: 'Grade & steel' }),
+    mat('mat', 'Board', '@door', { section: 'Materials & colors' }),
+    color('color', 'Color', 'white', { section: 'Materials & colors' }),
+    color('accent', 'Guard and ladder color', 'oak', { section: 'Materials & colors' }),
+  ],
+  presets: {
+    'Dormitory bunk (2 × 80×190)': { size: 'bunk', levels: '2', grade: 'strong', support: 'strong', color: 'grey', accent: 'grey' },
+    'Triple bunk (dormitory)': { size: 'bunk', levels: '3', lowH: 200, gap: 700, grade: 'strong', support: 'strong' },
+    'Kids bunk (2 × 90×190)': { size: 'single', levels: '2', grade: 'medium', support: 'medium', color: 'white', accent: 'sage' },
+    'Loft bed with desk': { size: 'single', levels: '1', under: 'desk', loftH: 1500 },
+    'Loft bed with wardrobe': { size: 'single', levels: '1', under: 'wardrobe', loftH: 1600 },
+  },
+  build(p, lib) {
+    const out = newOut();
+    const m = MATTRESS[p.size] || MATTRESS.single;
+    const t = T(lib, p.mat);
+    const post = 2 * t; // posts: two boards glued
+    const postD = 90;
+    const iW = m.w + 20;
+    const iL = m.l + 20;
+    const OW = iW + 2 * t;
+    const OL = iL + 2 * t;
+    const railH = 160;
+    const deckMat = sheetOf(lib, p.deckMat);
+    const deckT = deckMat.T;
+    const steel = BED_METAL[p.support] || BED_METAL.strong;
+    const n = p.levels === '1' ? 1 : Number(p.levels);
+    const decks = [];
+    if (p.levels === '1') decks.push(p.loftH);
+    else for (let k = 0; k < n; k++) decks.push(p.lowH + k * (p.mT + p.gap + deckT + steel.crossH));
+    const topDeck = decks[decks.length - 1];
+    const topMat = topDeck + p.mT;
+    const H = topMat + p.guardH;
+    const P = (name, o) => out.panels.push(panel(name, { mat: p.mat, color: p.color, group: 'Bunk', ...o }));
+    // posts (outside the frame corners)
+    for (const [x, z, nm] of [[-post, 0, 'head left'], [OW, 0, 'head right'], [-post, OL - postD, 'foot left'], [OW, OL - postD, 'foot right']]) {
+      for (let k = 0; k < 2; k++) P(`Post (${nm}) layer ${k + 1}`, { L: H, W: postD, eL: 2, eW: 1, edge: 'thick', role: 'rail', box: { x: x + k * t, y: 0, z, w: t, h: H, d: postD }, explode: [x < 0 ? -1 : 1, 0, 0] });
+    }
+    decks.forEach((dTop, i) => {
+      const lv = n > 1 ? `Bed ${i + 1}` : 'High bed';
+      const rTop = dTop + 60;
+      const sb = dTop - deckT - steel.crossH;
+      P(`${lv} · Side rail`, { L: OL, W: railH, eL: 2, eW: 2, edge: 'thick', role: 'rail', box: { x: 0, y: rTop - railH, z: 0, w: t, h: railH, d: OL } });
+      P(`${lv} · Side rail`, { L: OL, W: railH, eL: 2, eW: 2, edge: 'thick', role: 'rail', box: { x: OW - t, y: rTop - railH, z: 0, w: t, h: railH, d: OL } });
+      P(`${lv} · End rail`, { L: iW, W: railH, eL: 1, role: 'rail', box: { x: t, y: rTop - railH, z: 0, w: iW, h: railH, d: t } });
+      P(`${lv} · End rail`, { L: iW, W: railH, eL: 1, role: 'rail', box: { x: t, y: rTop - railH, z: OL - t, w: iW, h: railH, d: t } });
+      P(`${lv} · Deck holder`, { L: iL, W: 40, role: 'rail', box: { x: t, y: sb - 40, z: t, w: t, h: 40, d: iL } });
+      P(`${lv} · Deck holder`, { L: iL, W: 40, role: 'rail', box: { x: OW - 2 * t, y: sb - 40, z: t, w: t, h: 40, d: iL } });
+      const sp = splitToFit(iW - 4, iL - 4, deckMat, lib.settings.trim);
+      const along = sp.along === 'W' ? sp.pieces : 1;
+      for (let b = 0; b < along; b++) out.panels.push(panel(`${lv} · Deck`, { mat: p.deckMat, color: 'ply', L: Math.max(iW - 4, (iL - 4) / along), W: Math.min(iW - 4, (iL - 4) / along), role: 'deck', grain: false, group: 'Bunk', box: { x: t + 2, y: dTop - deckT, z: t + 2 + (b * (iL - 4)) / along, w: iW - 4, h: deckT, d: (iL - 4) / along }, explode: [0, 1, 0] }));
+      const crosses = Math.max(2, Math.ceil(iL / steel.spacing) - 1);
+      const crossLen = iW - 2 * t - 5;
+      out.linear.push({ key: steel.cross, name: `${lv} · ${steel.crossName}`, len: crossLen, qty: crosses });
+      for (let k = 1; k <= crosses; k++) out.bars.push({ x: 2 * t + 2, y: sb, z: t + (iL * k) / (crosses + 1) - 10, w: crossLen, h: steel.crossH, d: 20, kind: 'metal' });
+      if (steel.perimeter) { out.linear.push({ key: 'shs40', name: `${lv} · Welded frame 40×40`, len: 2 * iL + 2 * iW, qty: 1 }); addHw(out, 'weld', 1); addHw(out, 'gusset', 4); }
+      addHw(out, 'bedBolt', 4);
+      addHw(out, 'bolt8', 8);
+    });
+    // guards on the top bed (and on the high bed), with the ladder opening
+    const gy = topDeck + 60;
+    const gTop = H;
+    const gh = gTop - gy;
+    const ladX = p.ladder === 'right' ? OW - t : 0;
+    const openZ0 = OL - postD - p.ladderW;
+    P('Top guard (head end)', { color: p.accent, L: iW, W: gh, eL: 2, eW: 2, edge: 'thick', role: 'head', box: { x: t, y: gy, z: 0, w: iW, h: gh, d: t } });
+    P('Top guard (foot end)', { color: p.accent, L: iW, W: gh, eL: 2, eW: 2, edge: 'thick', role: 'head', box: { x: t, y: gy, z: OL - t, w: iW, h: gh, d: t } });
+    P('Top guard (wall side)', { color: p.accent, L: OL - 2 * postD, W: gh, eL: 2, eW: 2, edge: 'thick', role: 'head', box: { x: p.ladder === 'right' ? 0 : OW - t, y: gy, z: postD, w: t, h: gh, d: OL - 2 * postD } });
+    P('Top guard (ladder side)', { color: p.accent, L: openZ0 - postD, W: gh, eL: 2, eW: 2, edge: 'thick', role: 'head', box: { x: ladX, y: gy, z: postD, w: t, h: gh, d: openZ0 - postD } });
+    // ladder: two stiles and steel rungs every 250 mm
+    const lx = p.ladder === 'right' ? OW + post : -post - t;
+    const stileH = gTop;
+    for (const z of [openZ0, OL - postD - 70]) P('Ladder stile', { color: p.accent, L: stileH, W: 70, eL: 2, eW: 2, edge: 'thick', role: 'rail', box: { x: lx, y: 0, z, w: t, h: stileH, d: 70 }, explode: [p.ladder === 'right' ? 1 : -1, 0, 0] });
+    const rungs = Math.floor((topDeck + 60) / 250);
+    out.linear.push({ key: 'tube25', name: 'Ladder rungs (steel tube 25×25, or hardwood)', len: p.ladderW - 70, qty: rungs });
+    for (let k = 1; k <= rungs; k++) out.bars.push({ x: lx - 10, y: k * 250 - 12, z: openZ0 + 35, w: 25, h: 25, d: p.ladderW - 70, kind: 'metal' });
+    // under a loft bed
+    if (p.levels === '1') {
+      const clear = p.loftH - deckT - steel.crossH - 40;
+      if (p.under === 'desk') {
+        P('Desk top', { L: OL - 2 * postD, W: Math.min(600, iW), eL: 1, edge: 'thick', role: 'shelf', box: { x: OW - t - Math.min(600, iW), y: 730, z: postD, w: Math.min(600, iW), h: t, d: OL - 2 * postD } });
+        P('Desk back rail', { L: OL - 2 * postD, W: 120, role: 'shelf', box: { x: OW - 2 * t, y: 610, z: postD, w: t, h: 120, d: OL - 2 * postD } });
+        out.notes.push(`Desk under the high bed at 750 mm, ${Math.round(clear)} mm of headroom under the steel. Put a reading lamp under the deck.`);
+      } else if (p.under === 'wardrobe') {
+        const tmp = newOut();
+        carcass({ x0: 0, y0: 0, z0: 0, W: OL - 2 * postD, H: Math.min(clear - 20, 1450), D: Math.min(550, iW - 40), T: t, mat: p.mat, color: p.color, doorMat: p.mat, doorColor: p.accent, doorT: t, doorEdge: 'thick', backMat: '@back', backT: T(lib, '@back'), top: 'over', sections: [{ rail: true }, { shelves: 3 }], prefix: 'Wardrobe under' }, tmp, lib);
+        // turn it to face out from the side: its width runs along the bed length
+        const frame = { x: OW - Math.min(550, iW - 40), z: OL - postD, ry: 90 };
+        for (const pn of tmp.panels) { pn.frame = frame; out.panels.push(pn); }
+        Object.entries(tmp.hw).forEach(([k, v]) => addHw(out, k, v));
+        out.linear.push(...tmp.linear);
+        out.notes.push(...tmp.notes);
+      }
+    }
+    out.size = { w: OW + 2 * post + t, h: H, d: OL };
+    out.offsetX = -post;
+    out.notes.unshift(`${n > 1 ? `${n} beds` : 'High bed'}: decks at ${decks.map((d) => Math.round(d)).join(', ')} mm, mattress top ${Math.round(topMat)} mm, guard top ${Math.round(H)} mm. Frame ${Math.round(OW)} × ${Math.round(OL)} mm plus posts. Use mattresses no thicker than ${Math.round(p.guardH + p.mT - 160)} mm on top so the guard stays 160 mm above them.`);
+    out.notes.push('Posts: two boards glued and screwed together (36 mm). Bolt every rail to the posts with 2 M8 bed bolts and barrel nuts. Fix the bed to the wall with 2 anchors near the top.');
+    out.notes.push(`Ladder: ${rungs} rungs every 250 mm, ${p.ladderW} mm wide. Rungs from steel tube or hardwood: never MDF.`);
+    addHw(out, 'wallAnchor', 2);
+    if (p.guardH < 160) out.warnings.push('The top guard must be at least 160 mm above the mattress.');
+    if (topDeck > 1200 && n > 1) out.notes.push('Top bunk: not for children under 6.');
+    if (p.ceil - topMat < 750) out.warnings.push(`Only ${Math.round(p.ceil - topMat)} mm between the top mattress and the ceiling: 750 mm or more lets someone sit up.`);
+    for (let i = 1; i < decks.length; i++) { const room = decks[i] - deckT - steel.crossH - (decks[i - 1] + p.mT); if (room < 650) out.warnings.push(`Only ${Math.round(room)} mm sitting space on bed ${i}: 750 mm or more is comfortable.`); }
+    return out;
+  },
+};
+
+/* ================================================================ CURVED UNITS (for curved walls) */
+
+// a circle through the two ends of a chord that bulges back by s
+const arcOf = (c, s) => { const R = (c * c / 4 + s * s) / (2 * s); return { R, cx: c / 2, cz: R - s, theta: 2 * Math.asin(Math.min(1, c / (2 * R))) }; };
+
+MODELS.curved = {
+  name: 'Curved unit (follows a curved wall)', icon: '🌙', group: 'Storage',
+  desc: 'Sideboard, bench, TV unit, bookcase or wardrobe made of straight cabinets that follow a curved (bay) wall.',
+  params: [
+    num('chord', 'Straight width across the curve', 3000, { min: 900, max: 8000, section: 'Your curve', help: 'Measure straight across from one end of the curve to the other.' }),
+    num('bulge', 'How far the wall curves back', 600, { min: 100, max: 3000, section: 'Your curve', help: 'From the straight line to the deepest point of the wall.' }),
+    sel('kind', 'Unit', 'sideboard', [['bench', 'Window bench (450 high)'], ['sideboard', 'Sideboard / TV unit (750 high)'], ['bookcase', 'Bookcase (2000 high)'], ['wardrobe', 'Wardrobe (2200 high)']], { section: 'Your curve', sets: (v) => ({ height: { bench: 450, sideboard: 750, bookcase: 2000, wardrobe: 2200 }[v], depth: { bench: 450, sideboard: 450, bookcase: 350, wardrobe: 600 }[v], front: v === 'bookcase' || v === 'bench' ? 'open' : 'doors' }) }),
+    num('height', 'Height', 750, { min: 300, max: 2700, section: 'Size' }),
+    num('depth', 'Depth', 450, { min: 250, max: 700, section: 'Size' }),
+    num('maxW', 'Widest cabinet front', 600, { min: 300, max: 900, section: 'Size', help: 'Narrower cabinets follow the curve more closely.' }),
+    sel('front', 'Front', 'doors', [['doors', 'Doors'], ['open', 'Open shelves'], ['drawers', 'Drawers']], { section: 'Size' }),
+    cnt('shelves', 'Shelves in each cabinet', 1, { max: 8, section: 'Size' }),
+    gradeParam(),
+    ...MATERIAL_PARAMS({ color: 'oak', doorColor: 'oak' }),
+  ],
+  presets: {
+    'Bay window bench': { kind: 'bench', height: 450, depth: 450, front: 'open', shelves: 0, chord: 2400, bulge: 600 },
+    'Curved TV / sideboard': { kind: 'sideboard', height: 600, depth: 450, front: 'drawers', chord: 3000, bulge: 500 },
+    'Curved bookcase': { kind: 'bookcase', height: 2000, depth: 350, front: 'open', shelves: 5, chord: 3000, bulge: 700 },
+    'Curved wardrobe': { kind: 'wardrobe', height: 2200, depth: 600, front: 'doors', shelves: 4, chord: 3600, bulge: 900 },
+  },
+  build(p, lib) {
+    const out = newOut();
+    const t = T(lib, p.mat);
+    const a = arcOf(p.chord, p.bulge);
+    const r = a.R - p.depth; // front radius
+    if (r < 300) { out.warnings.push('The curve is too tight for this depth: make the unit shallower.'); }
+    const n = Math.max(2, Math.ceil(Math.max(1, r) * a.theta / p.maxW));
+    const phi = a.theta / n;
+    const w = 2 * Math.max(1, r) * Math.sin(phi / 2);
+    const dEff = Math.sqrt(a.R * a.R - (r * Math.sin(phi / 2)) ** 2) - r * Math.cos(phi / 2) - 10;
+    const plinth = p.kind === 'bench' ? 0 : 80;
+    const H = p.height - plinth;
+    let maxFront = -Infinity;
+    for (let k = 0; k < n; k++) {
+      const al = -a.theta / 2 + (k + 0.5) * phi;
+      const ux = Math.sin(al);
+      const uz = -Math.cos(al);
+      const fm = { x: a.cx + ux * r * Math.cos(phi / 2), z: a.cz + uz * r * Math.cos(phi / 2) };
+      const bm = { x: fm.x + ux * dEff, z: fm.z + uz * dEff };
+      const xh = { x: Math.cos(al), z: Math.sin(al) };
+      const frame = { x: bm.x - xh.x * (w / 2), z: bm.z - xh.z * (w / 2), ry: (-al * 180) / Math.PI };
+      for (const s2 of [-1, 1]) maxFront = Math.max(maxFront, fm.z + s2 * xh.z * (w / 2));
+      const tmp = newOut();
+      const sec = p.front === 'drawers' ? { drawers: Math.max(1, Math.min(4, Math.floor(H / 180))), drawerFill: true } : { shelves: p.shelves, open: p.front === 'open', doors: 1, hinge: k % 2 ? 'R' : 'L', rail: p.kind === 'wardrobe' && k % 2 === 0 };
+      carcass({ x0: 0, y0: plinth, z0: 0, W: w, H, D: dEff, T: t, mat: p.mat, color: p.color, doorMat: p.doorMat, doorColor: p.doorColor, doorT: T(lib, p.doorMat), doorEdge: p.doorEdge, backMat: p.backMat, backT: T(lib, p.backMat), top: 'over', sections: [sec], grade: p.grade, prefix: `Unit ${k + 1}` }, tmp, lib);
+      if (plinth) tmp.panels.push(panel(`Unit ${k + 1} · Plinth`, { mat: p.mat, color: p.color, L: w - 2 * t, W: plinth, role: 'plinth', box: { x: t, y: 0, z: dEff - 40 - t, w: w - 2 * t, h: plinth, d: t } }));
+      for (const pn of tmp.panels) { pn.frame = frame; out.panels.push(pn); }
+      Object.entries(tmp.hw).forEach(([kk, v]) => addHw(out, kk, v));
+      out.linear.push(...tmp.linear);
+      if (k === 0) out.notes.push(...tmp.notes.slice(0, 2));
+      out.warnings.push(...tmp.warnings.filter((x) => !out.warnings.includes(x)));
+    }
+    const ang = (phi * 180) / Math.PI;
+    out.notes.unshift(`${n} cabinets, each ${Math.round(w)} mm wide at the front and ${Math.round(dEff)} mm deep, turned ${ang.toFixed(1)}° to each other. Wall radius ${Math.round(a.R)} mm, front radius ${Math.round(r)} mm.`);
+    out.notes.push(`Join the cabinets at the front corners with 2 connector screws each; the wedge gaps at the back stay hidden against the wall. Bevel the touching side edges at ${(ang / 2).toFixed(1)}° for a tight front joint.`);
+    out.notes.push(`For one continuous top, cut it from 2–3 boards along the curve (outer radius ${Math.round(a.R)} mm, inner ${Math.round(r - 20)} mm) with a router on a trammel, and band the curved edge with flexible 2 mm PVC.`);
+    out.size = { w: p.chord, h: p.height, d: Math.max(p.depth, p.bulge) };
+    out.footprint = { x0: 0, x1: p.chord, z0: 0, z1: Math.max(50, maxFront + p.bulge * 0) , h: p.height };
+    out.curve = { chord: p.chord, bulge: p.bulge };
+    addHw(out, 'wallAnchor', p.height > 1200 ? n : 0);
+    return out;
   },
 };
 

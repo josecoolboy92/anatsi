@@ -12,8 +12,8 @@
   <link rel="stylesheet" href="css/app.css">
   <script type="importmap">
     { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
     } }
   </script>
 </head>
@@ -24,7 +24,9 @@
       <button id="new-project" class="btn primary" type="button">+ New project</button>
     </header>
     <div class="pad">
-      <h2 class="section-title">Start quickly</h2>
+      <h2 class="section-title">Room designs</h2>
+      <div id="rooms" class="quick-grid"></div>
+      <h2 class="section-title">Single pieces</h2>
       <div id="quick" class="quick-grid"></div>
       <h2 class="section-title">Your projects</h2>
       <div id="project-list" class="cards"></div>

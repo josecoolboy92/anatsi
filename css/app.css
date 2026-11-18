@@ -225,3 +225,5 @@ label.field-block input, label.field-block select, label.field-block textarea { 
 .guide-body h4 { margin: 4px 0 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
 .guide-body ol { margin: 0; padding-left: 20px; display: grid; gap: 5px; }
 .guide-svg { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin: 8px 0; }
+
+.lang-btn { margin-left: auto; margin-right: 8px; }

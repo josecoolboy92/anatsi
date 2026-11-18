@@ -3,6 +3,12 @@
 Free, open source, no ads, no account, no paywall. It works offline on your phone once it's installed.
 
 **Open the app:** https://josecoolboy92.github.io/anatsi/
+**Android app (APK, works offline):** download `Anatsi-1.1.apk` from the [latest release](https://github.com/josecoolboy92/anatsi/releases/latest).
+
+English and Amharic (አማርኛ): choose on first start, or switch on the home screen or in Settings.
+
+## Room designs
+Master bedroom · Kids bedroom (guard rails, loft bed with desk, rounded wardrobes) · Student room · Guest room (guest houses and rentals) · Dormitory (bunk beds, lockers) · Minimalist bedroom (floating platform bed, push-to-open wardrobe) · Small bedroom / studio · Room with a curved wall (units that follow the curve) · Walk-in dressing room for large houses · Living room TV wall. Tick the pieces you want; the room planner places them and checks walkways, sockets and the TV.
 
 ## What it does
 - **Kitchens:** enter your wall length and it plans the base and wall cabinets around the sink, cooker and fridge. It uses standard sizes (900 worktop, 600 depth, 720 wall cabinets). There's also a *Comfort* option that sizes the worktop and wall cabinets to the cook's height. You can also make single base, wall and tall cabinets.
@@ -18,3 +24,6 @@ Free, open source, no ads, no account, no paywall. It works offline on your phon
 
 ## Run it yourself
 It's a static site with no build step. To run it locally: `python3 -m http.server` and open http://localhost:8000.
+
+## Android app
+`android/` holds a small native Android app (no extra libraries) that serves the web app from inside the APK, so it needs no internet permission and works fully offline. Build it with the free Android SDK: `ANATSI_KS_PASS=... ./android/build.sh`. Keep the signing key safe: updates must be signed with the same key.

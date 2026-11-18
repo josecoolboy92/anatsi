@@ -195,7 +195,7 @@ export function panel(name, o) {
     id: uid(), name, role: o.role || 'carcass', mat: o.mat, color: o.color,
     L: round1(o.L), W: round1(o.W), eL: o.eL || 0, eW: o.eW || 0, edge: o.edge || 'thin',
     grain: o.grain !== false, box: o.box, door: o.door || null, hinges: o.hinges || null, note: o.note || '',
-    group: o.group || '', explode: o.explode || null,
+    group: o.group || '', explode: o.explode || null, shape: o.shape || null, frame: o.frame || null,
   };
 }
 export const round1 = (v) => Math.round(v * 10) / 10;
@@ -261,7 +261,7 @@ export const BED_METAL = {
     note: 'Cross tubes 25×25×1.5 every ~500 mm, sitting on the MDF holder strips, 2 screws each end. Center tube + 1 leg on wide beds. Cheapest; fine for home use.' },
   medium: { name: 'Medium steel (long-term use)', cross: 'rhs4020', crossName: 'Rectangular tube 40×20×1.5 (on edge)', crossH: 40, spacing: 400, ledger: 'angle30', beam: 'metalBox', beamLegs: 2, perimeter: null, legsExtra: 0,
     note: 'Steel angle 30×30×3 screwed along the inside of both side rails (on the holder strips); cross tubes 40×20 on edge every ~400 mm, welded or bolted to the angles. Center beam 40×20×2 with 2 legs on beds over 1300 mm.' },
-  strong: { name: 'Strong welded frame (hotel / heaviest)', cross: 'rhs4020', crossName: 'Rectangular tube 40×20×1.5 (on edge)', crossH: 40, spacing: 300, ledger: null, beam: 'shs40', beamLegs: 3, perimeter: 'shs40', legsExtra: 2,
+  strong: { name: 'Strong welded frame (heaviest use)', cross: 'rhs4020', crossName: 'Rectangular tube 40×20×1.5 (on edge)', crossH: 40, spacing: 300, ledger: null, beam: 'shs40', beamLegs: 3, perimeter: 'shs40', legsExtra: 2,
     note: 'A welded frame of square tube 40×40×2 all round, cross tubes 40×20 every ~300 mm, center beam 40×40 with 3 legs, corner gusset plates. The frame is bolted to the MDF rails with M8 bolts, so the MDF only hides the steel. Paint it against rust.' },
 };
 
@@ -306,7 +306,9 @@ export function splitToFit(L, W, sheet, trim = 10) {
 export const MATTRESS = {
   single: { name: 'Single', w: 900, l: 1900, region: 'Common' },
   single200: { name: 'Single long', w: 900, l: 2000, region: 'Common / EU' },
-  twin: { name: 'Twin (hotel)', w: 1000, l: 2000, region: 'Hotel' },
+  twin: { name: 'Twin 100', w: 1000, l: 2000, region: 'Common' },
+  bunk: { name: 'Bunk / dormitory', w: 800, l: 1900, region: 'Dormitory' },
+  kids: { name: 'Children', w: 800, l: 1600, region: 'Children' },
   twinUS: { name: 'Twin (US)', w: 990, l: 1905, region: 'US' },
   twinXL: { name: 'Twin XL (US)', w: 990, l: 2032, region: 'US' },
   small: { name: 'Small double', w: 1200, l: 1900, region: 'Common' },

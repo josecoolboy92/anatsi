@@ -109,6 +109,13 @@ export function pickFiles(accept, multiple = true) {
 
 // Download a blob as a file
 export function downloadBlob(blob, name) {
+  // inside the Android app: hand the file to Android (Files, WhatsApp, Telegram, email)
+  if (window.AnatsiAndroid) {
+    const r = new FileReader();
+    r.onload = () => window.AnatsiAndroid.saveFile(name, blob.type || 'application/octet-stream', String(r.result).split(',')[1] || '');
+    r.readAsDataURL(blob);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = el('a', { href: url, download: name });
   document.body.append(a);
