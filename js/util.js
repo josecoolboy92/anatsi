@@ -82,8 +82,8 @@ export function confirmBox(question, yesLabel = 'Yes') {
     const close = sheet('Are you sure?', [
       el('p', { class: 'muted' }, question),
       el('div', { class: 'row end' },
-        el('button', { class: 'btn', type: 'button', onclick: () => { close(); resolve(false); } }, 'Cancel'),
-        el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); resolve(true); } }, yesLabel)),
+        el('button', { class: 'btn', type: 'button', onclick: () => { resolve(false); close(); } }, 'Cancel'),
+        el('button', { class: 'btn danger', type: 'button', onclick: () => { resolve(true); close(); } }, yesLabel)),
     ], { onClose: () => resolve(false) });
   });
 }

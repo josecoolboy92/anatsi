@@ -3,6 +3,7 @@ import { $, el, toast, sheet, confirmBox, downloadBlob, storage, uid } from './u
 import { loadLibrary, saveLibrary, FINISHES, finishById, fmtLen, toMM, fromMM, matById, DEFAULT_MATERIALS, ROLE_MATS, ROLE_NAMES, priceOf, HINGE_TYPES, hingeGuide, GRADES } from './core.js';
 import { defaultRoom, WALLS, WALL_NAMES, footprint, aabb, corners, placeAgainst, autoArrange, checkRoom, syncCutouts, roomOut, freeSpans, wallLen, wallPoint, backWall } from './room.js';
 import { MODELS, defaults, buildItem } from './models.js';
+import { GUIDE } from './guide.js';
 import { buildProject, cutList, edgeBanding, hardware, layoutSheets, costs } from './cut.js';
 import { sheetSVG, ROLE_COLORS } from './diagram.js';
 
@@ -33,7 +34,7 @@ async function makeViewer(container, opts) {
 }
 
 /* ================================================================ navigation */
-const screens = { projects: $('#screen-projects'), materials: $('#screen-materials'), settings: $('#screen-settings') };
+const screens = { projects: $('#screen-projects'), materials: $('#screen-materials'), hardware: $('#screen-hardware'), settings: $('#screen-settings') };
 let tab = 'projects';
 function showTab(name) {
   tab = name;
@@ -41,6 +42,7 @@ function showTab(name) {
   document.querySelectorAll('#tabs button').forEach((b) => (b.dataset.tab === name ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
   if (name === 'projects') renderProjects();
   if (name === 'materials') renderMaterials();
+  if (name === 'hardware') renderGuide();
   if (name === 'settings') renderSettings();
   window.scrollTo(0, 0);
 }
@@ -72,20 +74,69 @@ function newItem(model, extra = {}) {
   return { id: uid(), model, name: extra.name || m.name, qty: extra.qty || 1, params: { ...defaults(m), ...(extra.params || {}) } };
 }
 
+// A bedroom set from the pieces the user ticked
+function roomSet(sel, bed) {
+  const items = [];
+  if (sel.bed) items.push(newItem('bed', { name: bed.name, params: { ...MODELS.bed.presets[bed.preset], ...(sel.ns ? {} : { ns: 'none' }) } }));
+  else if (sel.ns) items.push(newItem('nightstand', { name: 'Nightstand', qty: 2 }));
+  const order = ['w', 'd', 'c'].filter((k) => sel[{ w: 'ward', d: 'desk', c: 'coat' }[k]]).join('');
+  if (order === 'w') items.push(newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets[bed.wardrobe || 'Hotel wardrobe 900'] }));
+  else if (order) {
+    const space = (sel.ward ? 1200 : 0) + (sel.desk ? 1000 : 0) + (sel.coat ? 500 : 0);
+    const names = { w: 'Wardrobe', d: 'Desk', c: 'Coat rack' };
+    items.push(newItem('combo', { name: order.split('').map((k) => names[k]).join(' + '), params: { order, space } }));
+  }
+  return items;
+}
 const QUICK = [
-  { label: 'Kitchen from my wall', icon: '🍳', sub: 'Enter the wall length', make: () => [newItem('kitchenRun', { name: 'Kitchen' })] },
-  { label: 'Plan a room', icon: '📐', sub: 'Room size, sockets, TV → furniture fitted', tab: 'room', room: true, make: () => [newItem('bed', { name: 'Queen bed', params: MODELS.bed.presets['Hotel queen (1600×2000)'] }), newItem('combo', { name: 'Wardrobe + desk', params: MODELS.combo.presets['Small room 1.8 m (fold-down desk)'] })] },
-  { label: 'Hotel room set', icon: '🏨', sub: 'Queen bed, nightstands, wardrobe', make: () => [newItem('bed', { name: 'Queen bed', params: MODELS.bed.presets['Hotel queen (1600×2000)'] }), newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets['Hotel wardrobe 900'] })] },
-  { label: 'Joinable twin beds', icon: '🛏️', sub: '2 twins that make a king', make: () => [newItem('bed', { name: 'Twin beds', params: MODELS.bed.presets['Joinable twins → king (2× 900×2000)'] })] },
-  { label: 'Wardrobe', icon: '🚪', sub: 'Doors, shelves, rail', make: () => [newItem('cupboard', { name: 'Wardrobe', params: MODELS.cupboard.presets['Wardrobe 3-door 1500'] })] },
-  { label: 'Bookcase / cupboard', icon: '📚', sub: 'Open or closed', make: () => [newItem('cupboard', { name: 'Bookcase', params: MODELS.cupboard.presets['Bookcase open'] })] },
+  { label: 'Kitchen from my wall', icon: '🍳', sub: 'Enter the wall length',
+    pick: [['walls', 'Wall cabinets', true], ['sink', 'Sink cabinet', true], ['cooker', 'Cooker space', true], ['fridge', 'Fridge space', true], ['worktop', 'Worktop', true]],
+    make: (s) => [newItem('kitchenRun', { name: 'Kitchen', params: { walls: s.walls, sink: s.sink, cooker: s.cooker, fridge: s.fridge ? 'right' : 'none', worktop: s.worktop } })] },
+  { label: 'Plan a room', icon: '📐', sub: 'Room size, sockets, TV → furniture fitted', tab: 'room', room: true,
+    pick: [['bed', 'Bed', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', true], ['desk', 'Desk', true], ['coat', 'Coat rack', false]],
+    make: (s) => roomSet(s, { name: 'Queen bed', preset: 'Hotel queen (1600×2000)' }) },
+  { label: 'Hotel room set', icon: '🏨', sub: 'Pick: bed, nightstands, wardrobe, desk',
+    pick: [['bed', 'Queen bed', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', true], ['desk', 'Desk', false], ['coat', 'Coat rack', false]],
+    make: (s) => roomSet(s, { name: 'Queen bed', preset: 'Hotel queen (1600×2000)' }) },
+  { label: 'Joinable twin beds', icon: '🛏️', sub: '2 twins that make a king',
+    pick: [['bed', 'Twin beds', true], ['ns', 'Nightstands', true], ['ward', 'Wardrobe', false], ['desk', 'Desk', false]],
+    make: (s) => roomSet(s, { name: 'Twin beds', preset: 'Joinable twins → king (2× 900×2000)' }) },
+  { label: 'Wardrobe', icon: '🚪', sub: 'Doors, shelves, rail',
+    pick: [['rail', 'Hanging space', true], ['shelves', 'Shelf column', true], ['drawers', 'Drawers', false], ['doors', 'Doors', true]],
+    make: (s) => {
+      const sections = [];
+      if (s.rail) sections.push({ rail: true, share: s.shelves ? 2 : 1 });
+      if (s.shelves || s.drawers || !s.rail) sections.push({ shelves: s.shelves || !s.rail ? 4 : 0, drawers: s.drawers ? 3 : 0, share: 1, hinge: 'R' });
+      return [newItem('cupboard', { name: 'Wardrobe', params: { ...MODELS.cupboard.presets['Wardrobe 3-door 1500'], width: sections.length > 1 ? 1500 : 1000, sectionsMode: String(sections.length), sections, style: s.doors ? 'closed' : 'open' } })];
+    } },
+  { label: 'Bookcase / cupboard', icon: '📚', sub: 'Open or closed',
+    pick: [['doors', 'Doors', false], ['lower', 'Doors only below', false]],
+    make: (s) => [newItem('cupboard', { name: s.doors ? 'Cupboard' : 'Bookcase', params: { ...MODELS.cupboard.presets['Bookcase open'], style: s.lower ? 'lower' : s.doors ? 'closed' : 'open', depth: s.doors || s.lower ? 380 : 300 } })] },
   { label: 'Cutting list only', icon: '✂️', sub: 'Type in your parts', make: () => [newItem('custom', { name: 'My parts' })] },
 ];
 
+// ask which pieces to include before creating a set
+function pickPieces(q) {
+  return new Promise((resolve) => {
+    if (!q.pick) { resolve({}); return; }
+    const state = Object.fromEntries(q.pick.map(([k, , d]) => [k, d]));
+    const done = (v) => { resolve(v); close(); };
+    const close = sheet(q.label, [
+      el('p', { class: 'muted tiny' }, 'Tick what you want. You can add or remove pieces later too.'),
+      el('div', { class: 'pick-list' }, q.pick.map(([k, label]) => el('label', { class: 'pick-row' }, el('input', { type: 'checkbox', class: 'switch', checked: state[k], onchange: (e) => { state[k] = e.target.checked; } }), el('span', {}, label)))),
+      el('div', { class: 'row end', style: { marginTop: '12px' } }, el('button', { class: 'btn', type: 'button', onclick: () => done(null) }, 'Cancel'), el('button', { class: 'btn primary', type: 'button', onclick: () => done({ ...state }) }, 'Create')),
+    ], { onClose: () => resolve(null) });
+  });
+}
+
 function renderProjects() {
-  $('#quick').replaceChildren(...QUICK.map((q) => el('button', { class: 'quick', type: 'button', onclick: () => {
+  $('#quick').replaceChildren(...QUICK.map((q) => el('button', { class: 'quick', type: 'button', onclick: async () => {
+    const sel = await pickPieces(q);
+    if (!sel) return;
+    const made = q.make(sel);
+    if (!made.length && !q.room) { toast('Nothing ticked'); return; }
     const p = newProject(q.label);
-    p.items.push(...q.make());
+    p.items.push(...made);
     if (q.room) p.room = defaultRoom();
     saveProjects();
     openProject(p, q.tab || 'items');
@@ -121,7 +172,7 @@ function projectMenu(p) {
 function ask(title, placeholder = '', value = '') {
   return new Promise((resolve) => {
     const input = el('input', { value, placeholder, maxlength: 80 });
-    const done = (v) => { close(); resolve(v); };
+    const done = (v) => { resolve(v); close(); };
     const close = sheet(title, el('form', { onsubmit: (e) => { e.preventDefault(); done(input.value.trim()); } },
       el('label', { class: 'field-block' }, input),
       el('div', { class: 'row end' }, el('button', { class: 'btn', type: 'button', onclick: () => done('') }, 'Cancel'), el('button', { class: 'btn primary', type: 'submit' }, 'Save'))), { onClose: () => resolve('') });
@@ -167,7 +218,8 @@ function openProject(p, startTab = 'items') {
             el('div', { class: 'qty' },
               el('button', { type: 'button', 'aria-label': 'Fewer', onclick: () => { it.qty = Math.max(1, it.qty - 1); qty.textContent = it.qty; touch(); } }, '−'), qty,
               el('button', { type: 'button', 'aria-label': 'More', onclick: () => { it.qty = Math.min(999, it.qty + 1); qty.textContent = it.qty; touch(); } }, '+')),
-            el('button', { class: 'btn small', type: 'button', onclick: () => openItem(p, it) }, 'Edit design'))));
+            el('button', { class: 'btn small', type: 'button', onclick: () => openItem(p, it) }, 'Edit design'),
+            el('button', { class: 'btn small', type: 'button', 'aria-label': `Remove ${it.name}`, onclick: async () => { if (await confirmBox(`Remove “${it.name}” from this project?`, 'Remove')) { p.items = p.items.filter((x) => x !== it); touch(); renderItems(); } } }, '🗑 Remove'))));
     });
     body.replaceChildren(el('div', { class: 'pad' },
       el('label', { class: 'field-block' }, 'Client / location', el('input', { value: p.client || '', placeholder: 'Optional', oninput: (e) => { p.client = e.target.value; touch(); } })),
@@ -939,6 +991,63 @@ function renderMaterials() {
     el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Edge band', 'Low', 'High'].map((h) => el('th', {}, h)))), el('tbody', {}, lib.edges.map((e) => el('tr', {}, el('td', { class: 'name' }, e.name), el('td', { class: 'num' }, num(e, 'price', { style: { width: '84px' } })), el('td', { class: 'num' }, num(e, 'priceHi', { style: { width: '84px' } }))))))),
     el('h2', { class: 'section-title' }, 'Hardware, steel & upholstery'),
     el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ['Item', 'Per', 'Low', 'High'].map((h) => el('th', {}, h)))), el('tbody', {}, Object.values(lib.hardware).map((h) => el('tr', {}, el('td', { class: 'name' }, h.name), el('td', {}, h.unit === 'pcs' ? 'piece' : h.unit), el('td', { class: 'num' }, num(h, 'price', { style: { width: '84px' } })), el('td', { class: 'num' }, num(h, 'priceHi', { style: { width: '84px' } }))))))));
+}
+
+/* ================================================================ hardware guide */
+let guideCat = 'hinges';
+function guideDiagram(kind) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const S = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); n.append(...kids.flat().filter((x) => x != null)); return n; };
+  const T = (x, y, t, o = {}) => S('text', { x, y, 'font-size': 11, fill: '#44403c', 'text-anchor': 'middle', ...o }, t);
+  if (kind === 'overlay') {
+    // top view: side panel + door, for the three cranks
+    const svg = S('svg', { viewBox: '0 0 360 150', class: 'guide-svg', role: 'img', 'aria-label': 'Full, half and inset overlay seen from above' });
+    const draw = (x0, label, mode) => {
+      const g = S('g', { transform: `translate(${x0} 20)` });
+      g.append(S('rect', { x: 40, y: 10, width: 14, height: 80, fill: '#d6c7a9', stroke: '#57534e' }));
+      if (mode === 'half') g.append(S('rect', { x: 54, y: 10, width: 46, height: 80, fill: 'none' }));
+      const door = mode === 'full' ? { x: 42, y: 90, w: 60 } : mode === 'half' ? { x: 47, y: 90, w: 55 } : { x: 54, y: 76, w: 50 };
+      g.append(S('rect', { x: door.x, y: door.y, width: door.w, height: 14, fill: '#c2410c', 'fill-opacity': 0.8, stroke: '#7c2d12' }));
+      if (mode === 'half') g.append(S('rect', { x: -12, y: 90, width: 50, height: 14, fill: '#c2410c', 'fill-opacity': 0.45, stroke: '#7c2d12' }));
+      g.append(S('circle', { cx: door.x + 22, cy: door.y + 7, r: 5, fill: '#fff', stroke: '#7c2d12' }));
+      g.append(T(50, 122, label, { 'font-weight': 700 }));
+      g.append(T(47, 5, mode === 'half' ? 'divider' : 'side panel', { 'font-size': 9 }));
+      return g;
+    };
+    svg.append(draw(10, 'Full overlay', 'full'), draw(130, 'Half overlay', 'half'), draw(245, 'Inset', 'inset'));
+    return svg;
+  }
+  if (kind === 'slides') {
+    const svg = S('svg', { viewBox: '0 0 360 170', class: 'guide-svg', role: 'img', 'aria-label': 'Drawer box widths for each slide' });
+    const rows = [['Roller runners', 12.5, '−25 mm'], ['Ball-bearing', 13, '−26 mm'], ['Undermount', 5, '−10 mm']];
+    rows.forEach(([name, gap, txt], i) => {
+      const y = 18 + i * 50;
+      svg.append(S('rect', { x: 20, y, width: 10, height: 36, fill: '#d6c7a9', stroke: '#57534e' }), S('rect', { x: 330, y, width: 10, height: 36, fill: '#d6c7a9', stroke: '#57534e' }));
+      const g = gap * 3;
+      svg.append(S('rect', { x: 30 + g, y: y + 6, width: 300 - 2 * g, height: 26, fill: '#fde68a', stroke: '#a16207' }));
+      if (name !== 'Undermount') { svg.append(S('rect', { x: 30, y: y + 12, width: g, height: 12, fill: '#94a3b8' }), S('rect', { x: 330 - g, y: y + 12, width: g, height: 12, fill: '#94a3b8' })); }
+      else svg.append(S('rect', { x: 40, y: y + 32, width: 280, height: 4, fill: '#94a3b8' }));
+      svg.append(T(180, y + 23, `${name}: box = opening ${txt}`, { "font-size": 11, "font-weight": 600 }));
+    });
+    return svg;
+  }
+  return null;
+}
+function renderGuide() {
+  const body = $('#hardware-body');
+  const cat = GUIDE.find((c) => c.id === guideCat) || GUIDE[0];
+  const priceText = (k) => { const h = lib.hardware[k]; const v = h ? priceOf(h, lib) : 0; return v ? `${Math.round(v).toLocaleString()} ${lib.settings.currency} / ${h.unit === 'pcs' ? 'piece' : h.unit}` : null; };
+  body.replaceChildren(
+    el('div', { class: 'guide-cats', role: 'group', 'aria-label': 'Categories' }, GUIDE.map((c) => el('button', { type: 'button', 'aria-pressed': String(c.id === cat.id), onclick: () => { guideCat = c.id; renderGuide(); window.scrollTo(0, 0); } }, `${c.icon} ${c.title}`))),
+    el('p', {}, cat.intro),
+    cat.diagram ? guideDiagram(cat.diagram) : null,
+    cat.items.map((it, i) => el('details', { class: 'guide-item', open: i === 0 },
+      el('summary', {}, el('b', {}, it.name), el('div', { class: 'badges' }, el('span', { class: 'badge' }, it.grade), priceText(it.hw) ? el('span', { class: 'badge price' }, priceText(it.hw)) : null)),
+      el('div', { class: 'guide-body' },
+        el('h4', {}, 'How it works'), el('div', {}, it.how),
+        el('h4', {}, 'Best for'), el('div', {}, it.best),
+        el('h4', {}, 'Where and how to install'), el('ol', {}, it.install.map((x) => el('li', {}, x)))))),
+    el('p', { class: 'muted tiny', style: { marginTop: '14px' } }, 'Always check the packet of the hinge or slide you buy: brands differ by a few millimetres. Set prices in Materials → Hardware.'));
 }
 
 /* ================================================================ settings */

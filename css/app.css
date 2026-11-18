@@ -81,7 +81,7 @@ h1, h2, h3 { margin: 0; }
 .note-box li, .warn-box li { margin: 3px 0; }
 
 /* tabs */
-.tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 8; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 8; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .tabs button { background: none; border: 0; padding: 9px 2px 11px; color: var(--muted); font-size: .76rem; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .tabs button span { font-size: 1.25rem; line-height: 1.1; }
 .tabs button[aria-current="page"] { color: var(--accent); font-weight: 700; }
@@ -207,3 +207,21 @@ label.field-block input, label.field-block select, label.field-block textarea { 
 .hinge-svg { width: 100%; max-width: 360px; height: auto; display: block; margin: 8px auto 0; }
 .steps-list { padding-left: 20px; margin: 6px 0 12px; display: grid; gap: 6px; font-size: .92rem; }
 .note-box li { white-space: pre-line; }
+.pick-list { display: grid; gap: 4px; }
+.pick-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); font-weight: 600; }
+
+/* hardware guide */
+.guide-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+.guide-cats button { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 8px 13px; font-weight: 600; color: var(--ink); }
+.guide-cats button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.guide-item { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin: 10px 0; overflow: hidden; }
+.guide-item > summary { list-style: none; padding: 12px 14px; cursor: pointer; display: grid; gap: 3px; }
+.guide-item > summary::-webkit-details-marker { display: none; }
+.guide-item > summary b { font-size: 1rem; }
+.guide-item .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge { font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: #f5ede0; color: #7c4a1e; font-weight: 600; }
+.badge.price { background: #ecfdf5; color: #166534; }
+.guide-body { padding: 0 14px 14px; display: grid; gap: 8px; font-size: .92rem; }
+.guide-body h4 { margin: 4px 0 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+.guide-body ol { margin: 0; padding-left: 20px; display: grid; gap: 5px; }
+.guide-svg { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin: 8px 0; }

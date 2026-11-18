@@ -943,7 +943,7 @@ MODELS.combo = {
     num('ceil', 'Ceiling height', 2700, { min: 2000, max: 4000, section: 'Your space' }),
     num('height', 'Height', 2200, { min: 1600, max: 2700, section: 'Your space' }),
     num('depth', 'Wardrobe depth', 600, { min: 450, max: 700, section: 'Your space' }),
-    sel('order', 'Order (left → right)', 'wdc', [['wdc', 'Wardrobe · Desk · Coat'], ['cwd', 'Coat · Wardrobe · Desk'], ['dwc', 'Desk · Wardrobe · Coat'], ['wd', 'Wardrobe · Desk'], ['dw', 'Desk · Wardrobe'], ['wc', 'Wardrobe · Coat'], ['cw', 'Coat · Wardrobe'], ['dc', 'Desk · Coat']], { section: 'Your space' }),
+    sel('order', 'Order (left → right)', 'wdc', [['wdc', 'Wardrobe · Desk · Coat'], ['cwd', 'Coat · Wardrobe · Desk'], ['dwc', 'Desk · Wardrobe · Coat'], ['wd', 'Wardrobe · Desk'], ['dw', 'Desk · Wardrobe'], ['wc', 'Wardrobe · Coat'], ['cw', 'Coat · Wardrobe'], ['dc', 'Desk · Coat'], ['cd', 'Coat · Desk'], ['w', 'Wardrobe only'], ['d', 'Desk only'], ['c', 'Coat rack only']], { section: 'Your space', help: 'Leave out any part you don’t want.' }),
     num('wardW', 'Wardrobe width (0 = automatic)', 0, { min: 0, max: 3000, section: 'Wardrobe' }),
     bool('wardShelves', 'Shelf column beside the hanging space', true, { section: 'Wardrobe', help: 'Used when the wardrobe is 1000 mm or wider.' }),
     cnt('wardDrawers', 'Drawers under the shelves', 2, { max: 4, section: 'Wardrobe' }),

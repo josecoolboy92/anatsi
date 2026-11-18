@@ -242,7 +242,7 @@ export function hingeGuide(type, doorT = 18, matKind = 'MDF') {
   if (type === 'half') steps.push('Two doors on one divider: both use half-overlay hinges, plates on each side of the divider at the same height.');
   if (type === 'inset') steps.push('Inset: the door is 4–6 mm smaller than the opening (2–3 mm gap each side). The plate sits 37 mm + door thickness back from the front edge.');
   if (type === 'push') steps.push('Push latch: screw it inside the cabinet near the opening edge, opposite the hinges, 10 mm behind the front edge. Use hinges without springs.');
-  if (type === 'flap') steps.push('Lift-up flap: 2 hinges along the TOP edge of the door; fix a gas strut or flap stay on each side (choose its force by the door weight: about 6 kg per m² for 18 mm MDF).');
+  if (type === 'flap') steps.push('Lift-up flap: 2 hinges along the TOP edge of the door; fix a gas strut or flap stay on each side (choose its force by the door weight: 18 mm MDF weighs about 13–14 kg per m²).');
   if (type === 'wide') steps.push('Wide angle hinges need a plate with 0 mm spacing; check the door clears the wall or the next door when opened.');
   steps.push('Never screw into the MDF edge without a pilot hole, and don’t over-tighten: MDF threads strip. If a hole strips, glue in a hardwood dowel and drill again.');
   return steps;
